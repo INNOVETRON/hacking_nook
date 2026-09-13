@@ -4,20 +4,22 @@ A fullscreen image panel for the Nook Simple Touch: fetch a PNG from a server on
 the LAN, save the dashboard as the screensaver, and sleep until the next update.
 The default refresh interval is **3600 seconds (one hour)**.
 
-Long press the picture or status message to open the Refresh now / Settings menu.
-An ordinary tap does not open the menu.
+The APK ignores all touchscreen input. There is no on-device settings activity
+or long-press menu. Set the initial image URL using `tools/push-config.sh` over
+ADB; existing installations keep their URL when upgraded.
 
-A small battery icon and percentage overlay the top-right corner of the image.
-A plus sign indicates charging. The indicator uses the Nook's battery level,
-updates only when its displayed state changes, and remains over a retained image
-after a failed refresh. Long pressing it opens the same menu.
+Use `http://<server>:8001/` for displayer refresh and weather page settings.
+The server returns `X-Nook-Refresh-Seconds` with every image response (including
+503). The app persists valid values from 60 to 86400 seconds and uses the new
+interval for the next alarm. Missing or invalid headers retain the previous
+interval; the default is one hour. Already-sleeping devices receive changes on
+their next fetch, not immediately.
 
-When an image URL is configured, NookPanel starts automatically after boot,
-turns on the display, and dismisses the Nook's slide lock without a button press.
-Automatic updates return to sleep after five seconds. Manually wake the Nook
-with its physical wake button, then long press for the menu. It stays awake for
-60 seconds after your last interaction; an open menu or Settings keeps it awake.
-Side-button remapping and touch disabling are not needed.
+A small battery icon and percentage overlay the top-right corner. A plus sign
+indicates charging. It remains visible over retained images and screensavers.
+Automatic cycles sleep after five seconds; a physical manual wake leaves Wi-Fi
+available for 60 seconds. Touching the display does not extend that time.
+The app starts automatically after boot when an image URL is configured.
 
 If a refresh fails, the last successfully displayed image stays visible while
 the app retries at the configured interval. An error is shown only if no image

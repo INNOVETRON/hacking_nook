@@ -19,5 +19,14 @@
     "09:30": "today",
     "17:00": "daily",
     "21:00": "tomorrow"
-  }
+  },
+  "settings_port": 8001,
+  "device_refresh_seconds": 3600,
+  "active_program": "weather-cal",
+  "enabled_pages": [
+    "hourly",
+    "today",
+    "daily",
+    "tomorrow"
+  ]
 }

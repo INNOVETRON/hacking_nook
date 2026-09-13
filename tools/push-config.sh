@@ -9,7 +9,7 @@ set -euo pipefail
 
 PKG=com.hackingnook.panel
 URL="${1:?usage: $0 <image-url> [interval-seconds]}"
-INTERVAL="${2:-300}"
+INTERVAL="${2:-3600}"
 PREFS_DIR="/data/data/$PKG/shared_prefs"
 
 # Android 2.1's toolbox is threadbare: no `ls -ld`, no `mkdir -p`, and `chown`

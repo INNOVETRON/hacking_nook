@@ -222,10 +222,11 @@ Chromiums compete and Selenium times out at 120 s. Check for
    ```
 3. **Point it at the Pi** over adb, not the touchscreen:
    ```bash
-   ./tools/push-config.sh http://<pi-ip>:8000/panel.png 300
+   ./tools/push-config.sh http://<pi-ip>:8000/panel.png 3600
    ```
-4. It starts itself on boot. Tap the screen for Refresh / Settings, and
-   `./tools/screenshot.sh out.png` shows you the panel from your desk.
+4. It starts itself on boot and ignores touch. Open `http://<pi-ip>:8001/`
+   for program schedules and displayer refresh settings. Changes arrive on the
+   next fetch. `./tools/screenshot.sh out.png` captures the display.
 
 The Android 2.1 traps — and there are several — are in
 [docs/06-our-own-app.md](docs/06-our-own-app.md).

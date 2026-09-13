@@ -49,6 +49,11 @@ def _minutes(text):
 
 def scheduled_page(config, now):
     schedule = config.get("page_schedule") or DEFAULT_SCHEDULE
+    enabled = config.get("enabled_pages")
+    if enabled is not None:
+        schedule = {k: v for k, v in schedule.items() if v in enabled}
+    if not schedule:
+        return enabled[0] if enabled else "today"
     current = now.hour * 60 + now.minute
     entries = sorted((_minutes(k), v) for k, v in schedule.items())
 
@@ -127,6 +132,8 @@ def choose(config, weather, now):
     """Return (page_name, reason). `reason` is None when nothing overrode."""
     page = scheduled_page(config, now)
 
+    if "hourly" not in config.get("enabled_pages", ["hourly"]):
+        return page, None
     if not config.get("advisories", True) or weather is None or not weather.data:
         return page, None
     if not _within_waking_hours(config, now):

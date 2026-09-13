@@ -863,3 +863,39 @@ installed the verified helper on nultra. Visually inspected the regenerated live
 Today UV curve. The full cycle finished at 15:53:37; Tomorrow selected wind from
 the updated forecast (gusts 35 km/h), retaining its bars as intended. The renderer
 resumed HTTP service and kept the existing 16:00 client-wake schedule.
+
+## 2026-09-13 — Touch-free APK and remote settings dashboard
+
+Device: BNRV300, firmware 1.2.2 (confirmed over ADB). Server: nultra,
+192.168.4.43. No flashing or firmware changes.
+
+Built APK 0.2.0 with the pinned Docker/Ant toolchain. Removed the long-press menu
+and SettingsActivity; PanelActivity consumes touch without extending awake time.
+The image response's X-Nook-Refresh-Seconds header persists the next wake interval,
+including on 503; absent/invalid values retain the previous setting.
+
+Added a Nultra-inspired settings dashboard on :8001, with one Weather & forecast
+radio card, per-render enable/start times, advisory switch, and displayer refresh.
+Validated settings persist atomically and wake page selection; disabled Hourly
+cannot reappear via advisories. Existing one-hour device interval and four-page
+schedule remain defaults. Current is not offered because this deployment only
+generates Hourly, Today, Daily, and Tomorrow. Future program adapter and per-device
+profile boundaries are documented in server/README.md.
+
+Deployed only the proxy/control files, preserving Nultra's existing dirty checkout
+and weather-cal service. Compared proxy files with the Git baseline first;
+backups are /home/afshin/nook-backups/settings-20260913 on Nultra. Restarted only
+nookpanel. Live :8001 API and browser load succeeded; :8000/panel.png returned
+HTTP 200, 44,463 bytes, with X-Nook-Refresh-Seconds: 3600.
+
+Validation: 25 unit tests pass; clean APK build passes; browser preview saved a
+30-minute interval and disabled Hourly, with the expected JSON persisted. These
+preview changes did not alter live settings. Asked for the hardware wake button
+when the APK was ready; ADB became reachable for installation.
+
+ADB `install -r` returned Success and PanelActivity launched. Triggered a normal
+automatic refresh intent for runtime verification. Existing URL/preferences were
+preserved; no device touch events or firmware writes were used.
+Post-install verification: Nultra logged the Nook (192.168.4.78) fetching
+/panel.png with HTTP 200 at 08:41:51. The subsequent ADB read was unavailable
+after the sleep window, so persisted device preferences were not read back.

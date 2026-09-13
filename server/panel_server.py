@@ -45,6 +45,7 @@ from PIL import Image
 import fonts
 import layouts
 import pagechoice
+import settings
 from weather import Weather
 
 LOG = logging.getLogger("nookpanel")
@@ -65,6 +66,8 @@ DEFAULT_CONFIG = {
     "refresh_seconds": 300,
     "retry_seconds": 30,        # retry unavailable/damaged renderer pages sooner
     "port": 8000,
+    "settings_port": 8001,
+    "device_refresh_seconds": 3600,
 }
 
 
@@ -79,6 +82,7 @@ class RenderedPages:
     """
 
     def __init__(self, config, cache_dir):
+        self.settings_changed = threading.Event()
         self.config = config
         self.base = (config.get("renderer_url")
                      or config.get("mirror_base")   # old name, still honoured
@@ -194,7 +198,9 @@ class RenderedPages:
     def run_forever(self):
         interval = self.config.get("refresh_seconds", 300)
         while True:
-            time.sleep(max(1, self.config.get("retry_seconds", 30)) if self.retrying else interval)
+            delay = max(1, self.config.get("retry_seconds", 30)) if self.retrying else self.config.get("refresh_seconds", 300)
+            self.settings_changed.wait(delay)
+            self.settings_changed.clear()
             try:
                 self.refresh()
             except Exception:
@@ -206,6 +212,7 @@ class Renderer:
     """Owns the current PNG and refreshes it on a timer in the background."""
 
     def __init__(self, config, cache_dir):
+        self.settings_changed = threading.Event()
         self.config = config
         self.cache_dir = cache_dir
         self.weather = Weather(config)
@@ -236,7 +243,8 @@ class Renderer:
     def run_forever(self):
         interval = self.config.get("refresh_seconds", 300)
         while True:
-            time.sleep(interval)
+            self.settings_changed.wait(self.config.get("refresh_seconds", 300))
+            self.settings_changed.clear()
             try:
                 self.refresh()
             except Exception:
@@ -269,12 +277,14 @@ def make_handler(renderer):
                 body = renderer.current()
                 if not body:
                     self.send_response(503)
+                    self.send_header("X-Nook-Refresh-Seconds", str(renderer.config.get("device_refresh_seconds", 3600)))
                     self.send_header("Retry-After", str(max(1, renderer.config.get("retry_seconds", 30))))
                     self.send_header("Content-Length", "0")
                     self.send_header("Cache-Control", "no-store")
                     self.end_headers()
                     return
                 self.send_response(200)
+                self.send_header("X-Nook-Refresh-Seconds", str(renderer.config.get("device_refresh_seconds", 3600)))
                 self.send_header("Content-Type", "image/png")
                 self.send_header("Content-Length", str(len(body)))
                 self.send_header("Cache-Control", "no-store")
@@ -358,6 +368,11 @@ def main():
         return
 
     threading.Thread(target=renderer.run_forever, daemon=True).start()
+
+    control = ThreadingHTTPServer(("0.0.0.0", config["settings_port"]),
+                                  settings.make_handler(settings.Settings(renderer, args.config)))
+    threading.Thread(target=control.serve_forever, daemon=True).start()
+    LOG.info("settings dashboard on port %d", config["settings_port"])
 
     server = ThreadingHTTPServer(("0.0.0.0", config["port"]), make_handler(renderer))
     LOG.info("serving http://0.0.0.0:%d/panel.png", config["port"])

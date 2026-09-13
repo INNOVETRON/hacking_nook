@@ -34,8 +34,7 @@ Notes that cost time to discover:
 
 | | |
 |---|---|
-| `PanelActivity` | Fullscreen image with battery overlay; long press → Refresh / Settings. Fetches, saves the screensaver, then sleeps |
-| `SettingsActivity` | Two fields: image URL and refresh interval. Not a `PreferenceActivity` — typing on an infrared touchscreen is bad enough already |
+| `PanelActivity` | Fullscreen image with battery overlay; touch input ignored. Fetches, saves the screensaver, then sleeps |
 | `ImageFetcher` | Plain HTTP only. Decodes to `RGB_565` with `inPurgeable`, and catches `Throwable` because `OutOfMemoryError` is a genuine expectation at 256 MB |
 | `Config` | One place for SharedPreferences keys, with a 10 s floor on the interval |
 | `RefreshReceiver` / `PowerCycle` | Persistent RTC wake alarm, bounded wake lock, Wi-Fi control and screen-timeout restoration |
@@ -91,12 +90,11 @@ Implemented in NookPanel on 2026-09-12, with a **one-hour default refresh**:
   and hide the screensaver banner. The Innovetron boot and off screens remain.
 - Use an explicit manifest `RefreshReceiver` and `AlarmManager.RTC_WAKEUP`, so
   the next cycle survives process eviction. Schedule a fallback before fetching
-  and rearm at completion. The interval remains editable in Settings.
+  and rearm at completion. The server supplies the interval through the image response header.
 - Allow 25 seconds for Wi-Fi to associate; a 75-second watchdog bounds the whole
   attempt. A timed-out completion cannot replace the currently displayed image.
 - Automatic cycles sleep after five seconds; manual wake enables Wi-Fi and
-  leaves 60 seconds of idle time for the long-press menu. Menus and Settings
-  stay awake while open. No side-button remapping is used.
+  leaves 60 seconds for ADB access. Touch input is ignored. No side-button remapping is used.
 - Turn Wi-Fi off, release the bounded refresh wake lock, clear the awake window
   flags, and set the system timeout to one second. Restore the original timeout
   on SCREEN_OFF, with a persisted recovery flag for the next app launch.
@@ -132,4 +130,4 @@ The manifest now includes `WRITE_SETTINGS`, `WRITE_EXTERNAL_STORAGE`,
 - **v0.2** ✅ deep sleep, hourly wake, last-good-image cache, battery overlay
 - **v0.3** battery/RSSI reporting back to the server; explicit e-ink full-refresh
   control (`/sys/class/graphics/fb0/epd_*`, `android.hardware.EpdController`)
-- **v0.4** touch zones: tap left/right to page between server-rendered screens
+- **Remote control**: server dashboard selects programs, render schedules, and device refresh. No touch zones are planned.

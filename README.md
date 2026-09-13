@@ -98,7 +98,7 @@ Raspberry Pi OS, any model. Tested on a Zero 2 W.
 
 ```bash
 sudo apt install -y git
-git clone --recurse-submodules https://github.com/AfshinKI/hacking_nook.git ~/hacking_nook
+git clone --recurse-submodules https://github.com/INNOVETRON/hacking_nook.git ~/hacking_nook
 cd ~/hacking_nook
 
 OSM_MAP_LABEL="Edmonton" ./upstream/install-on-pi.sh   # renderer (~10 min)

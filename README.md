@@ -5,9 +5,12 @@
 **A 2011 Nook Simple Touch, turned into a wall dashboard.**
 
 A Raspberry Pi draws the page. The Nook fetches it, displays it, and sleeps.
-No cloud, no subscription, no API keys.
+Local rendering and control. No subscription or weather API keys.
+Weather and map data come from Open-Meteo and OpenStreetMap.
 
-<img src="docs/images/page-today.png" width="260" alt="Today view: a line-art map of the city, the temperature, and a chance-of-precipitation chart">
+<img src="docs/images/display.jpg" width="560" alt="Our white Nook Simple Touch displaying a city map, cloudy weather, 17°C, and a UV forecast curve">
+
+*The working build: server-rendered weather on the Nook’s e-ink display.*
 
 </div>
 
@@ -30,12 +33,12 @@ No cloud, no subscription, no API keys.
 </tr>
 </table>
 
-> Stock photographs, not this build, Credits at the bottom.
+> The hardware comparison uses stock photographs; the main photo above is our build. Credits below.
 
 ## The pages
 
-Four views. Which one shows depends on the time of day, and on whether the
-weather is about to do something you should know about.
+Four weather wallpapers, selected on the server. Enable the ones you want and
+set their start times in the web dashboard. These are the default times:
 
 <table>
 <tr>
@@ -47,42 +50,45 @@ weather is about to do something you should know about.
 </table>
 
 **If the weather is about to turn, it switches to `hourly` regardless of the
-clock** — rain or snow starting, rain turning to snow, a thunderstorm, crossing
+clock, when Hourly and advisories are enabled** — rain or snow starting, rain turning to snow, a thunderstorm, crossing
 freezing, a big temperature swing, wind picking up. Those are the times you want
 to know *when*, and `hourly` is the page that says so.
 
 A gradual drift does not interrupt. Cloud thickening, or two degrees over six
 hours, is what the day view already shows.
 
-**`today` and `tomorrow` each carry a chance-of-precipitation chart** across the
-lower half — the next nine hours, and tomorrow's daytime.
+**Today and Tomorrow adapt their lower chart to the forecast:** precipitation,
+wind, UV, or temperature. Precipitation and wind use hatched bars; UV and
+temperature use smooth curves. Tomorrow summarizes daytime in two-hour peaks.
+See [chart selection details](upstream/README.md#adaptive-today-and-tomorrow-charts).
 
 ## How it fits together
 
-```
-Raspberry Pi                                     Nook Simple Touch
-┌──────────────────────────────────────┐         ┌──────────────────┐
-│ weather-cal  :8082                   │         │ NookPanel app    │
-│   draws 4 pages, once an hour        │  wifi   │   fetches every  │
-│              │                       │ ──────► │   5 min, shows   │
-│              ▼                       │         │   it fullscreen, │
-│ nookpanel    :8000                   │         │   then sleeps    │
-│   picks the page, serves the PNG     │         └──────────────────┘
-└──────────────────────────────────────┘
+```text
+Browser                         Raspberry Pi                       Nook
+   │                            weather-cal :8082                   │
+   │                              renders weather PNGs              │
+   │                                      │                         │
+   └── settings dashboard :8001 ──► nookpanel :8000 ◄── image fetch ──┘
+       programs + schedules          selects and caches PNGs       displays,
+       displayer refresh             sends refresh interval        then sleeps
 ```
 
-Both services run **on the Pi**. Nothing else is involved once deployed.
+Two services run on the Pi; the Nook does no weather fetching or page rendering.
 
-- **weather-cal** is [chrisjtwomey/inkplate10-weather-cal](https://github.com/chrisjtwomey/inkplate10-weather-cal)
-  run as-is, with one file swapped so the map comes from OpenStreetMap instead
-  of Google Static Maps. It renders HTML in headless Chromium — slow, hence
-  hourly.
-- **nookpanel** decides which page to show, on every refresh. Fast, hence every
-  5 minutes. If a render fails it keeps serving the last good image; if there
-  has never been one, it draws a simpler page itself. **The panel never goes
-  blank.**
-- **NookPanel**, the app, is ours — built for Android 2.1, which nothing modern
-  can target.
+- **weather-cal** uses [inkplate10-weather-cal](https://github.com/chrisjtwomey/inkplate10-weather-cal),
+  with local patches for keyless maps, adaptive charts, and generation retries.
+  HTML/CSS is rendered through headless Chromium on its hourly schedule.
+- **nookpanel** checks which page to serve every five minutes by default. It
+  validates incoming PNGs and caches the last good image in memory and on disk.
+  Failed downloads retry after 30 seconds. With no cached image it returns 503;
+  it does not substitute different artwork in renderer mode.
+- **The settings dashboard**, served by the same nookpanel process on port 8001,
+  saves program schedules and the device refresh interval without a restart.
+- **NookPanel APK 0.2.0** fetches a picture, overlays its battery indicator,
+  preserves the display as a screensaver, turns Wi-Fi off, and sleeps until an
+  RTC alarm. Touch and long-press controls are disabled. Its default wake
+  interval is **one hour**, independently of the server's five-minute check.
 
 Everything restarts on boot — see [Auto-start](#auto-start) below.
 
@@ -132,20 +138,20 @@ sudo apt-get check             # should print nothing
 
 then re-run the installer. It is safe to run more than once.
 
-> Give the Pi a **DHCP reservation**. The Nook stores a literal URL, and typing
-> one on an infrared touchscreen is miserable.
+> Give the Pi a **DHCP reservation**. The Nook stores its server URL; initial
+> setup uses ADB, and everyday settings use the web dashboard.
 
 ### Sharing a Pi with other services
 
-Nothing here assumes a dedicated Pi. It uses **two ports, 8000 and 8082**, and
-nothing else — no global Python packages (the renderer gets its own venv), no
-changes to anything already installed.
+Nothing here assumes a dedicated Pi. It uses **three ports**: 8000 for image delivery,
+8001 for settings, and 8082 for the renderer. The renderer has its own Python
+venv; the installers also install system packages and configure swap.
 
 ```bash
-ss -tlnp | grep -E ':8000|:8082'     # check they are free first
+ss -tlnp | grep -E ':8000|:8001|:8082'     # check they are free first
 ```
 
-To move them, set `port` in `server/config.json` and `server.port` in
+To move them, set `port` and `settings_port` in `server/config.json`, and `server.port` in
 `upstream/run/config.yaml`, then point `renderer_url` at the new renderer port.
 
 The one thing that is not free is **memory**. Chromium is the whole cost, and
@@ -173,13 +179,13 @@ sudo systemctl enable --now weather-cal nookpanel
 
 | | |
 |---|---|
-| ~15 s | Pi boots, both units start |
-| ~20 s | Panel serves a page it draws itself — the renderer is not up yet |
-| ~3 min | Renderer finishes its four pages |
-| ~5 min | Panel picks them up on its next refresh |
+| At startup | Pi starts both services; the proxy restores its last good cached image |
+| While rendering | The Nook retains its previous picture; a first-ever empty proxy returns 503 |
+| When a valid PNG is ready | The proxy updates its cache |
+| At the next Nook wake | The device fetches the image and the current refresh interval |
 
-**The panel is never blank**, and no one has to touch anything. The first
-couple of minutes show a simpler locally-drawn page.
+Rendering and Wi-Fi startup take longer on smaller Pis. A restart or a temporary
+outage preserves the previous artwork instead of replacing it with a fallback page.
 
 ### Wi-Fi is slower than systemd thinks
 
@@ -191,9 +197,8 @@ leave the renderer down for minutes.
 
 The unit now waits for a name to actually resolve before starting:
 
-```ini
-ExecStartPre=/bin/sh -c 'for i in $(seq 1 60); do getent hosts api.open-meteo.com >/dev/null 2>&1 && exit 0; sleep 2; done; exit 0'
-```
+[`upstream/wait-for-dns.sh`](upstream/wait-for-dns.sh) is installed as the unit's
+startup check.
 
 Bounded at two minutes, and it exits 0 either way, so a genuinely offline boot
 still starts and retries rather than blocking forever.
@@ -217,8 +222,9 @@ Chromiums compete and Selenium times out at 120 s. Check for
    Run *Backup* from its menu before *Root*.
 2. **Build and install the app.** Needs Docker on any x86_64 machine, once:
    ```bash
-   cd app && make image && make debug
-   adb install -r bin/NookPanel-debug.apk
+   (cd app && make image && make debug)
+   # Press the physical wake button before uploading an update over Wi-Fi.
+   adb install -r app/bin/NookPanel-debug.apk
    ```
 3. **Point it at the Pi** over adb, not the touchscreen:
    ```bash
@@ -231,21 +237,74 @@ Chromiums compete and Selenium times out at 120 s. Check for
 The Android 2.1 traps — and there are several — are in
 [docs/06-our-own-app.md](docs/06-our-own-app.md).
 
-## Change what it shows
+## Choose and schedule wallpapers
 
-| Want to | Where |
+Open **`http://<pi-ip>:8001/`** from a browser on your LAN. No APK rebuild is
+needed when you change a schedule or refresh interval.
+
+1. The main page has one **Weather & forecast** program card with radio selection.
+   This is the currently supported program.
+2. Open **Program settings** to enable Hourly, Today, Daily, or Tomorrow and give
+   each enabled wallpaper a unique start time. A page stays selected until the
+   next start time; the last slot continues overnight. Times use the server's
+   configured timezone.
+3. Enable or disable weather advisory overrides. Disabled Hourly is never chosen
+   by an advisory.
+4. Open **Displayer options** to set the device refresh interval, from one minute
+   to 24 hours. Longer intervals mean fewer wakeups and less battery use.
+5. Save. The server persists settings and starts selecting the new page. The
+   Nook receives changes **on its next fetch**; saving cannot wake a sleeping Nook.
+
+The server sends `X-Nook-Refresh-Seconds` with image responses, including 503.
+The APK remembers valid intervals and uses them for its next alarm. If the header
+is missing or invalid, it keeps its previous interval. All Nooks using this
+endpoint currently share the same displayer settings.
+
+The dashboard is a trusted-LAN interface without a login. Keep ports 8000, 8001,
+and 8082 on your local network; plain HTTP supports Android 2.1's old network stack.
+
+## How we build a wallpaper server
+
+The display contract is deliberately small: **serve a complete PNG over HTTP**.
+Our portrait pages are 600×800, prepared for the Nook's greyscale e-ink panel.
+Fonts, charts, maps, calendars, and any API calls belong on the server. The APK
+only fetches, displays, and sleeps.
+
+The current implementation separates three jobs:
+
+| Job | Implementation |
 |---|---|
-| Different page times | `page_schedule` in `server/config.json` |
-| Turn off weather alerts | `"advisories": false` |
-| Zoom or move the map | `OSM_MAP_ZOOM`, `OSM_MAP_CENTER` — [upstream/README.md](upstream/README.md) |
-| Use your own map picture | `OSM_MAP_FILE=/path/to.png` |
-| Skip weather-cal entirely | unset `renderer_url`; `server/` draws simpler pages itself |
+| Produce wallpaper images | `upstream/`: weather-cal templates, local patches, and the Chromium renderer |
+| Choose a wallpaper and preserve a good image | `server/pagechoice.py` and `server/panel_server.py` |
+| Configure the program and display | `server/settings.py` and `server/dashboard.html` on port 8001 |
+
+To connect another image renderer manually, serve its PNG on the LAN and set
+`mirror_url` in `server/config.json`, removing `renderer_url` and `mirror_base` if
+present. Restart `nookpanel`. The Nook keeps fetching the same `/panel.png` URL;
+the proxy validates and caches the source image. This fixed-image mode is useful
+for a custom wallpaper endpoint; it does not add a program card automatically.
+
+For a future **landscape clock, calendar, or other rendering program**, add a
+stable program ID and settings to the server catalog, implement its image adapter
+and selection logic, and give it a separate cache identity. Publish a new image
+only after validation succeeds. Orientation and layout stay in that adapter's
+output, so adding a renderer does not require touch controls or layout code in
+the APK. Clock/calendar program cards and a wallpaper-upload interface are
+**planned, not implemented**.
+
+Full API, persistence, and extension details: [server/README.md](server/README.md#remote-settings-and-future-programs).
+
+| Other customization | Where |
+|---|---|
+| Zoom or move the weather map | `OSM_MAP_ZOOM`, `OSM_MAP_CENTER` — [upstream guide](upstream/README.md) |
+| Use your own picture behind the weather | `OSM_MAP_FILE=/path/to.png` — [map image guide](upstream/README.md#using-your-own-picture-instead-of-a-map) |
+| Draw the simpler built-in layouts | Remove `renderer_url`, `mirror_base`, and `mirror_url`; see [server layouts](server/README.md#layouts) |
 
 ## Layout
 
 ```
 app/         NookPanel — our Android 2.1 client
-server/      picks and serves the page; can also draw its own
+server/      wallpaper selection, image cache, settings dashboard, local layouts
 upstream/    weather-cal: the OSM map shim, patches, Pi installer
 tools/       flash an SD card, push config, screenshot the panel
 docs/        how it was built, and a full lab log

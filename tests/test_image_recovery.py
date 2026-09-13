@@ -39,7 +39,7 @@ class ImageRecovery(unittest.TestCase):
             with patch.object(panel.urllib.request, 'urlopen', side_effect=OSError('offline')):
                 restarted = panel.RenderedPages(config, cache)
             self.assertEqual(restarted.current(), body)
-            with patch.object(panel.time, 'sleep', side_effect=InterruptedError) as sleep:
+            with patch.object(restarted.settings_changed, 'wait', side_effect=InterruptedError) as sleep:
                 with self.assertRaises(InterruptedError):
                     restarted.run_forever()
             sleep.assert_called_once_with(30)

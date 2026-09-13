@@ -9,6 +9,5 @@
     <string name="settings">Settings</string>
     <string name="cancel">Cancel</string>
     <string name="menu_title">NookPanel</string>
-    <string name="waiting">No image yet.\n\nLong press the screen and choose Settings to
-        point NookPanel at your server.</string>
+    <string name="waiting">No image yet. Configure the server URL over ADB, then use the server dashboard.</string>
 </resources>

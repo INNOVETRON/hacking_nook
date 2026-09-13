@@ -15,6 +15,7 @@ python3 panel_server.py --config config.json
 ```
 
 - `http://<host>:8000/panel.png` — what the Nook fetches
+- `http://<host>:8001/` — settings dashboard (programs, schedules, displayer refresh)
 - `http://<host>:8000/` — self-reloading preview page for your desktop browser
 - `python3 panel_server.py --once out.png` — render one frame and exit
 
@@ -48,7 +49,7 @@ Only complete PNGs replace the last good image, which is saved atomically under
 `server/.cache/` and restored after restart. The server never substitutes a local
 dashboard. Without any saved image it returns HTTP 503 with `Retry-After`, allowing
 the Nook to retain its own previous image. Successful fetches return to the normal
-`refresh_seconds` interval; the Nook's one-hour wake interval is unchanged.
+`refresh_seconds` interval; the Nook's wake interval is controlled separately by `device_refresh_seconds`.
 
 ## Config
 
@@ -183,3 +184,42 @@ Thresholds are all overridable: `advisory_hours`, `precip_probability`,
 Next additions, in order: a calendar column (ICS/CalDAV feed), then optional
 Home Assistant entities, then per-device layouts. See
 [../docs/04-project-ideas.md](../docs/04-project-ideas.md).
+
+## Remote settings and future programs
+
+The same process opens a second HTTP listener on `settings_port` (default 8001).
+Port 8000 remains the image/preview service; 8082 remains weather-cal. The control
+port is intended for the trusted LAN and has no login. Do not expose it publicly.
+
+The dashboard offers one selected Weather & forecast card with radio selection,
+render enable switches, start times in the configured timezone, and an advisory
+switch. Each enabled render needs a unique start time. The last slot wraps over
+midnight. Disabled Hourly cannot be selected by a weather advisory. Disabling a
+render affects display selection, not upstream generation cost.
+
+Displayer options set `device_refresh_seconds` (60–86400, default 3600). This is
+independent of proxy `refresh_seconds` and weather-cal's generation schedule.
+`X-Nook-Refresh-Seconds` is returned on image responses, even 503; APK 0.2 persists
+it before scheduling its next alarm. Existing APKs ignore the header. All devices
+using this image endpoint share the setting. A sleeping device cannot receive an
+immediate push.
+
+`GET /api/settings` returns schema version 1 and the program catalog.
+`POST /api/settings` takes a JSON object containing `active_program`,
+`device_refresh_seconds`, `enabled_pages`, `page_schedule`, and `advisories`.
+Invalid values return 400, cross-origin browser writes 403, non-JSON 415, and
+persistence failures 500. Valid settings are atomically saved to the existing
+config file, preserving unrelated keys, then published in memory. The page worker
+wakes immediately; until its fetch finishes, the last good image remains served.
+Only the dashboard-exposed settings are hot-reloaded; ports/renderer URLs require
+a restart. Back up config.json before manual edits.
+
+`settings.py` owns the versioned catalog and validation, `pagechoice.py` owns
+weather scheduling, and `panel_server.py` owns image delivery and recovery.
+Future clock/calendar programs should add a stable catalog ID and a server-side
+adapter producing a validated PNG, with namespaced program settings and cache
+keys. The APK contract stays image + refresh header. Program switching must
+finish a valid first render before replacing the cached image. Future orientation
+belongs in the adapter's output; do not add layout work to the APK. Per-device
+settings will require device IDs and separate profiles; v1 intentionally shares
+one displayer profile. No future program is advertised as selectable yet.

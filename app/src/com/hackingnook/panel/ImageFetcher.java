@@ -27,7 +27,7 @@ public final class ImageFetcher {
     }
 
     /** @return the decoded bitmap, or null if anything at all went wrong. */
-    public static Bitmap fetch(String urlString) {
+    public static Bitmap fetch(String urlString, android.content.Context context) {
         // Froyo and earlier have a broken HttpURLConnection keep-alive pool that
         // hands out already-closed sockets. Eclair is worse. Just disable it.
         System.setProperty("http.keepAlive", "false");
@@ -43,6 +43,11 @@ public final class ImageFetcher {
             connection.setRequestProperty("Connection", "close");
 
             int status = connection.getResponseCode();
+            // Accept settings even on a 503 so recovery can use the new interval.
+            int interval = connection.getHeaderFieldInt("X-Nook-Refresh-Seconds", -1);
+            if (interval >= 60 && interval <= 86400) {
+                Config.prefs(context).edit().putInt(Config.KEY_INTERVAL, interval).commit();
+            }
             if (status != HttpURLConnection.HTTP_OK) {
                 Log.w(TAG, "HTTP " + status + " from " + urlString);
                 return null;

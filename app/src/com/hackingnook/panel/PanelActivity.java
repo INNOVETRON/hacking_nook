@@ -1,10 +1,8 @@
 package com.hackingnook.panel;
 
 import android.app.Activity;
-import android.app.AlertDialog;
 import android.content.BroadcastReceiver;
 import android.content.Context;
-import android.content.DialogInterface;
 import android.content.Intent;
 import android.content.IntentFilter;
 import android.graphics.Bitmap;
@@ -36,14 +34,14 @@ public class PanelActivity extends Activity {
     private TextView status;
     private BatteryView battery;
     private View panel;
-    private boolean resumed, sleeping, automatic, menuOpen, destroyed, fetching;
+    private boolean resumed, sleeping, automatic, destroyed, fetching;
     private boolean requestedRefresh;
     private String fetchUrl;
     private volatile int requestId;
 
     private final Runnable idleSleep = new Runnable() {
         public void run() {
-            if (resumed && !menuOpen && !fetching) sleepNow();
+            if (resumed && !fetching) sleepNow();
         }
     };
     private final Runnable watchdog = new Runnable() {
@@ -78,7 +76,7 @@ public class PanelActivity extends Activity {
                 automatic = false;
                 PowerCycle.restoreTimeout(PanelActivity.this);
                 if (resumed) foreground();
-                Log.i("NookPanel", "manual wake; menu available for 60 seconds");
+                Log.i("NookPanel", "manual wake; display available for 60 seconds");
             }
         }
     };
@@ -94,12 +92,6 @@ public class PanelActivity extends Activity {
         panel = (View) image.getParent();
         acceptIntent(getIntent());
         getWindow().addFlags(AWAKE_FLAGS);
-        View.OnLongClickListener listener = new View.OnLongClickListener() {
-            public boolean onLongClick(View view) { showMenu(); return true; }
-        };
-        image.setOnLongClickListener(listener);
-        status.setOnLongClickListener(listener);
-        battery.setOnLongClickListener(listener);
         registerReceiver(batteryReceiver, new IntentFilter(Intent.ACTION_BATTERY_CHANGED));
         IntentFilter filter = new IntentFilter(Intent.ACTION_SCREEN_OFF);
         filter.addAction(Intent.ACTION_SCREEN_ON);
@@ -160,10 +152,8 @@ public class PanelActivity extends Activity {
     }
 
     @Override
-    public void onUserInteraction() {
-        super.onUserInteraction();
-        automatic = false;
-        armIdle();
+    public boolean dispatchTouchEvent(android.view.MotionEvent event) {
+        return true; // Display appliance: touches never wake controls or extend idle time.
     }
 
     @Override
@@ -180,7 +170,7 @@ public class PanelActivity extends Activity {
 
     private void armIdle() {
         handler.removeCallbacks(idleSleep);
-        if (!resumed || fetching || menuOpen || sleeping || Config.url(this).length() == 0) return;
+        if (!resumed || fetching || sleeping || Config.url(this).length() == 0) return;
         handler.postDelayed(idleSleep, automatic ? 5000L : MANUAL_IDLE_MS);
     }
 
@@ -208,7 +198,7 @@ public class PanelActivity extends Activity {
                     while (id == requestId && SystemClock.elapsedRealtime() < deadline) {
                         WifiInfo info = wifi == null ? null : wifi.getConnectionInfo();
                         if (wifi != null && wifi.isWifiEnabled() && info != null && info.getIpAddress() != 0) {
-                            result = ImageFetcher.fetch(url);
+                            result = ImageFetcher.fetch(url, PanelActivity.this);
                             break;
                         }
                         SystemClock.sleep(500L);
@@ -249,7 +239,7 @@ public class PanelActivity extends Activity {
         } else if (image.getDrawable() == null) {
             showStatus("Could not fetch an image.\n\nLast try: "
                     + DateFormat.getTimeFormat(this).format(new Date())
-                    + "\n\nLong press for settings.");
+                    + "\n\nConfigure this display through the server dashboard.");
         } else {
             Log.i("NookPanel", "refresh failed; retained previous picture");
         }
@@ -259,7 +249,7 @@ public class PanelActivity extends Activity {
     }
 
     private void sleepNow() {
-        if (fetching || menuOpen || PowerCycle.settingsOpen || destroyed) return;
+        if (fetching || PowerCycle.settingsOpen || destroyed) return;
         handler.removeCallbacks(idleSleep);
         Bitmap screenshot = null;
         try {
@@ -297,26 +287,4 @@ public class PanelActivity extends Activity {
         status.setText(text);
     }
 
-    private void showMenu() {
-        if (menuOpen) return;
-        automatic = false;
-        menuOpen = true;
-        handler.removeCallbacks(idleSleep);
-        AlertDialog dialog = new AlertDialog.Builder(this)
-                .setTitle(R.string.menu_title)
-                .setItems(new CharSequence[] { getString(R.string.refresh_now), getString(R.string.settings) },
-                        new DialogInterface.OnClickListener() {
-                    public void onClick(DialogInterface dialog, int which) {
-                        if (which == 0) refresh();
-                        else {
-                            PowerCycle.settingsOpen = true;
-                            startActivity(new Intent(PanelActivity.this, SettingsActivity.class));
-                        }
-                    }
-                }).setNegativeButton(R.string.cancel, null).create();
-        dialog.setOnDismissListener(new DialogInterface.OnDismissListener() {
-            public void onDismiss(DialogInterface dialog) { menuOpen = false; armIdle(); }
-        });
-        dialog.show();
-    }
 }

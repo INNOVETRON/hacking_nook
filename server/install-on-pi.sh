@@ -26,7 +26,7 @@ echo "==> installing dependencies"
 # fonts-comic-neue is the rounded hand-lettered face the 'today' layout is
 # drawn around; without it the text falls back to DejaVu and looks wrong.
 sudo apt-get update -qq
-sudo apt-get install -y -qq python3-pil fonts-dejavu-core fonts-comic-neue
+sudo apt-get install -y -qq python3-pil fonts-dejavu-core fonts-comic-neue adb
 
 if [ ! -f "$SERVER_DIR/config.json" ]; then
     echo "==> creating config.json from the example — edit it and re-run"

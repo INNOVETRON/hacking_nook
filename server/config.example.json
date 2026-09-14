@@ -21,7 +21,9 @@
     "21:00": "tomorrow"
   },
   "settings_port": 8001,
+  "nook_adb_address": "",
   "device_refresh_seconds": 3600,
+  "server_refresh_seconds": 1800,
   "active_program": "weather-cal",
   "enabled_pages": [
     "hourly",

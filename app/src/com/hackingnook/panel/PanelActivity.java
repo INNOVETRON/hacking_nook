@@ -74,9 +74,10 @@ public class PanelActivity extends Activity {
             } else if (sleeping && !PowerCycle.alarmStarting) {
                 sleeping = false;
                 automatic = false;
+                requestedRefresh = true;
                 PowerCycle.restoreTimeout(PanelActivity.this);
                 if (resumed) foreground();
-                Log.i("NookPanel", "manual wake; display available for 60 seconds");
+                Log.i("NookPanel", "manual wake; refresh requested");
             }
         }
     };
@@ -104,7 +105,8 @@ public class PanelActivity extends Activity {
 
     private void acceptIntent(Intent intent) {
         automatic = intent.getBooleanExtra(PowerCycle.AUTOMATIC, false);
-        requestedRefresh = automatic;
+        // A manual launch (including the n button) must also fetch immediately.
+        requestedRefresh = true;
         intent.removeExtra(PowerCycle.AUTOMATIC);
         sleeping = false;
         PowerCycle.alarmStarting = false;
@@ -124,7 +126,12 @@ public class PanelActivity extends Activity {
         resumed = true;
         PowerManager pm = (PowerManager) getSystemService(POWER_SERVICE);
         if (sleeping && !pm.isScreenOn()) return;
-        if (sleeping) { sleeping = false; automatic = false; }
+        if (sleeping && !PowerCycle.alarmStarting) {
+            sleeping = false;
+            automatic = false;
+            // Resume can arrive before SCREEN_ON; consume the wake only once.
+            requestedRefresh = true;
+        }
         foreground();
     }
 

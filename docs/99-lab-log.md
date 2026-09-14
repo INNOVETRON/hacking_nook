@@ -899,3 +899,76 @@ preserved; no device touch events or firmware writes were used.
 Post-install verification: Nultra logged the Nook (192.168.4.78) fetching
 /panel.png with HTTP 200 at 08:41:51. The subsequent ADB read was unavailable
 after the sleep window, so persisted device preferences were not read back.
+
+## 2026-09-13 — Install fetch-on-manual-wake update
+
+Device: BNRV300, firmware 1.2.2 (reconfirmed using ADB getprop).
+Goal: fetch immediately when waking with the physical n button.
+Did: built the updated APK with `cd app && make debug`. After the owner woke
+it, connected with `adb connect <nook-ip>:5555`, installed using
+`adb -s <nook-ip>:5555 install -r app/bin/NookPanel-debug.apk`, and launched
+`adb -s <nook-ip>:5555 shell am start -n com.hackingnook.panel/.PanelActivity`.
+Result: install returned Success; app log for new PID 2345 showed a manual
+refresh starting at 15:48:07 and succeeding at 15:48:11 (device log time).
+Existing app settings preserved by reinstall. No firmware changes.
+Broke / gotchas: first Wi-Fi connection reported No route to host; retry connected.
+Next: verify a subsequent physical n-button wake fetches before the scheduled
+interval; the post-install launch fetch was verified, the next button wake was not.
+
+## 2026-09-13 — Dashboard-controlled server generation interval
+
+Device: Nook untouched. Server: deployment Pi (<server-ip>).
+Goal: generate fresh weather images every 30 minutes and expose the interval on :8001.
+Did: confirmed the previous upstream scheduler ran hourly with a 120-second lead;
+the proxy checks for images every 300 seconds and the device wakes every 3600.
+Added server_refresh_seconds (900–86400; default 1800) to the settings API and
+Program settings. The retrying adapter polls the API every 15 seconds, retains
+the interval on outages, serially regenerates all configured pages, and skips
+missed slots. It retains the existing 120-second lead (:28 and :58 for 30 minutes).
+Validation: 29 unit tests passed, including interval validation/persistence,
+legacy saves, control outages, hot reload, deadline alignment and serial runs.
+Python compilation and git diff whitespace checks passed. Visually checked the
+live dashboard and saved 30 minutes through its Program settings form.
+Deployment: verified deployed files matched Git baseline, backed up settings.py,
+dashboard.html, config.json and retrying_server.py under
+~/nook-backups/generation-20260913 on the Pi. Copied only updated
+control files and the renderer adapter; restarted nookpanel and weather-cal.
+Both services reported active. Live settings API returned server_refresh_seconds
+1800 and device_refresh_seconds 3600; existing page choices and start times retained.
+Post-deploy verification: image endpoint remained HTTP 200 during startup.
+All four startup pages finished; at 15:57:49 the live adapter logged
+"Server image generation every 1800 seconds; next at Sun Sep 13 15:58:00 2026".
+The next slots are :28 and :58. Dashboard form save and visual inspection passed.
+
+## 2026-09-13 — Reset display button (deployment pending)
+
+Device: Nook untouched; no reboot sent. Server: deployment Pi (<server-ip>).
+Goal: reboot the Nook from :8001 and show failure when it is not connected.
+Did: added Reset display to Your displayer, a same-origin JSON POST endpoint,
+and an ADB adapter with explicit configured IPv4:port targeting, connection-state
+verification, bounded command timeouts, concurrency guard and 30-second success
+cooldown. Added adb to installer dependencies. nook_adb_address is blank in the
+example; deployment must set it to the known Nook <nook-ip>:5555.
+Validation: all 34 tests passed, including no reboot on offline/failed connection,
+timeouts/missing ADB/reboot rejection, duplicates, request validation and origin
+protection. Local browser preview verified the red offline failure message using
+a simulated unavailable Nook. Python compilation and shell syntax passed.
+Deployment blocked: SSH to the Pi returned No route to host on repeated attempts.
+Need to deploy server/settings.py, dashboard.html and display_control.py, ensure
+adb is installed, configure nook_adb_address preserving all other settings, and
+restart only nookpanel once the server is reachable. No live files changed.
+
+## 2026-09-13 — Reset display deployed after server returned
+
+Server: deployment Pi (<server-ip>). Nook unreachable during verification; no reboot sent.
+Compared live dashboard/settings against the prepared change: only the expected
+reset feature differed. Backed up settings.py, dashboard.html and config.json to
+~/nook-backups/reset-20260913 on the Pi. Installed distro adb package,
+deployed settings.py, dashboard.html, display_control.py and updated installer.
+Set nook_adb_address to <nook-ip>:5555 preserving all other config. Started ADB
+as the service user and restarted only nookpanel. Python compilation passed on the Pi.
+Live browser button test returned: "Reset failed: Nook is asleep, off, or not
+connected. Wake it with the n button and try again." The button re-enabled.
+Settings API retained server interval 1800, device interval 3600 and page choices;
+image endpoint returned HTTP 200. Connected-device reboot remains unit-tested,
+not hardware-confirmed in this deployment session.

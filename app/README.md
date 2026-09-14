@@ -17,8 +17,10 @@ their next fetch, not immediately.
 
 A small battery icon and percentage overlay the top-right corner. A plus sign
 indicates charging. It remains visible over retained images and screensavers.
-Automatic cycles sleep after five seconds; a physical manual wake leaves Wi-Fi
-available for 60 seconds. Touching the display does not extend that time.
+Automatic cycles sleep after five seconds. Waking with the physical “n” button
+fetches immediately, even before the next scheduled refresh, and leaves Wi-Fi
+available for 60 seconds after the fetch finishes. Opening the app also fetches
+immediately. Touching the display does not extend that time.
 The app starts automatically after boot when an image URL is configured.
 
 If a refresh fails, the last successfully displayed image stays visible while

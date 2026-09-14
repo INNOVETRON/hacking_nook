@@ -8,6 +8,7 @@ import threading
 from http.server import BaseHTTPRequestHandler
 from urllib.parse import urlsplit
 import pagechoice
+from display_control import DisplayControl, ResetError
 
 PROGRAMS = [{"id": "weather-cal", "name": "Weather & forecast", "description": "Your day, at a glance", "pages": ["hourly", "today", "daily", "tomorrow"]}]
 
@@ -17,10 +18,12 @@ class Settings:
         self.renderer = renderer
         self.path = Path(path)
         self.lock = threading.Lock()
+        self.display = DisplayControl()
 
     def snapshot(self):
         c = self.renderer.config
         return {"version": 1, "programs": PROGRAMS, "active_program": c.get("active_program", "weather-cal"),
+                "server_refresh_seconds": c.get("server_refresh_seconds", 1800),
                 "device_refresh_seconds": c.get("device_refresh_seconds", 3600),
                 "enabled_pages": c.get("enabled_pages", list(dict.fromkeys((c.get("page_schedule") or pagechoice.DEFAULT_SCHEDULE).values()))),
                 "page_schedule": c.get("page_schedule", pagechoice.DEFAULT_SCHEDULE),
@@ -29,13 +32,16 @@ class Settings:
 
     def save(self, data):
         keys = {"active_program", "device_refresh_seconds", "enabled_pages", "page_schedule", "advisories"}
-        if not isinstance(data, dict) or set(data) != keys:
+        if not isinstance(data, dict) or not keys <= set(data) or set(data) - keys - {"server_refresh_seconds"}:
             raise ValueError("Send all settings fields, without unknown fields.")
         if data["active_program"] != "weather-cal":
             raise ValueError("Unknown program.")
         interval = data["device_refresh_seconds"]
         if type(interval) is not int or not 60 <= interval <= 86400:
             raise ValueError("Refresh must be between 60 and 86400 seconds.")
+        server_interval = data.get("server_refresh_seconds", self.renderer.config.get("server_refresh_seconds", 1800))
+        if type(server_interval) is not int or not 900 <= server_interval <= 86400:
+            raise ValueError("Server generation must be between 15 minutes and 24 hours.")
         enabled = data["enabled_pages"]
         if not isinstance(enabled, list) or not enabled or any(p not in PROGRAMS[0]["pages"] for p in enabled) or len(set(enabled)) != len(enabled):
             raise ValueError("Enable at least one valid render, without duplicates.")
@@ -90,7 +96,7 @@ def make_handler(settings):
                 self.reply(404, {"error": "Not found"})
 
         def do_POST(self):
-            if self.path != "/api/settings":
+            if self.path not in ("/api/settings", "/api/display/reset"):
                 return self.reply(404, {"error": "Not found"})
             # JSON plus same-origin checking prevents cross-site form writes.
             origin = self.headers.get("Origin")
@@ -102,8 +108,16 @@ def make_handler(settings):
                 length = int(self.headers.get("Content-Length", "0"))
                 if not 0 < length <= 16384:
                     raise ValueError("Invalid request size")
-                result = settings.save(json.loads(self.rfile.read(length)))
+                data = json.loads(self.rfile.read(length))
+                if self.path == "/api/display/reset":
+                    if data != {}:
+                        raise ValueError("Reset takes an empty JSON object.")
+                    result = settings.display.reset(settings.renderer.config.get("nook_adb_address", ""))
+                else:
+                    result = settings.save(data)
                 self.reply(200, result)
+            except ResetError as exc:
+                self.reply(exc.status, {"error": str(exc)})
             except (ValueError, TypeError) as exc:
                 self.reply(400, {"error": str(exc)})
             except OSError:

@@ -42,3 +42,7 @@ server/.cache/
 upstream/config.yaml
 upstream/.venv/
 upstream/run/
+
+# Machine-local agent integrations
+/.codex/
+/.mcp.json

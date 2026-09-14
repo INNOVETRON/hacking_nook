@@ -15,7 +15,7 @@ python3 panel_server.py --config config.json
 ```
 
 - `http://<host>:8000/panel.png` — what the Nook fetches
-- `http://<host>:8001/` — settings dashboard (programs, schedules, displayer refresh)
+- `http://<host>:8001/` — settings dashboard (programs, schedules, server generation, displayer refresh)
 - `http://<host>:8000/` — self-reloading preview page for your desktop browser
 - `python3 panel_server.py --once out.png` — render one frame and exit
 
@@ -63,7 +63,8 @@ the Nook to retain its own previous image. Successful fetches return to the norm
 | `map_zoom` | 10 = region, 11 = metro (default), 12 = city centre |
 | `map_strength` | How dark the map is, 0–1. Higher is punchier |
 | `landscape` | `false` → 600×800 portrait (native). `true` → rotated to 800×600 |
-| `refresh_seconds` | How often the server re-renders |
+| `refresh_seconds` | Proxy image check interval (or local Pillow render interval) |
+| `server_refresh_seconds` | Weather-cal image generation interval, 900–86400 seconds; default 1800 |
 | `port` | HTTP port |
 
 `config.json` is gitignored — it is yours, and future versions will hold tokens.
@@ -105,7 +106,7 @@ ones the weather-cal renderer produces. **Both run on the same Pi** — that URL
 is `http://127.0.0.1:8082`, a loopback fetch, not a network dependency. Nothing
 outside the Pi is involved once deployed.
 
-The split earns its keep twice over: the renderer redraws once an hour (three
+The split earns its keep twice over: the renderer redraws every 30 minutes by default (several
 minutes of Chromium), while this process decides which page to show on every
 refresh; and a render that fails or produces a damaged file never reaches the
 panel.
@@ -198,7 +199,14 @@ midnight. Disabled Hourly cannot be selected by a weather advisory. Disabling a
 render affects display selection, not upstream generation cost.
 
 Displayer options set `device_refresh_seconds` (60–86400, default 3600). This is
-independent of proxy `refresh_seconds` and weather-cal's generation schedule.
+independent of proxy `refresh_seconds` and the server generation interval.
+Program settings sets `server_refresh_seconds` (15 minutes–24 hours, default 30
+minutes). The weather-cal adapter polls this setting every 15 seconds and
+regenerates all configured pages serially, starting two minutes before each
+interval boundary. Changes apply to the next future slot; an active render
+finishes normally. Slow runs skip missed slots. Control service outages retain
+the last known interval. The image proxy can take up to five more minutes to
+pick up completed images.
 `X-Nook-Refresh-Seconds` is returned on image responses, even 503; APK 0.2 persists
 it before scheduling its next alarm. Existing APKs ignore the header. All devices
 using this image endpoint share the setting. A sleeping device cannot receive an
@@ -206,7 +214,9 @@ immediate push.
 
 `GET /api/settings` returns schema version 1 and the program catalog.
 `POST /api/settings` takes a JSON object containing `active_program`,
-`device_refresh_seconds`, `enabled_pages`, `page_schedule`, and `advisories`.
+`device_refresh_seconds`, `server_refresh_seconds`, `enabled_pages`,
+`page_schedule`, and `advisories`. Older callers may omit
+`server_refresh_seconds` to preserve its current value.
 Invalid values return 400, cross-origin browser writes 403, non-JSON 415, and
 persistence failures 500. Valid settings are atomically saved to the existing
 config file, preserving unrelated keys, then published in memory. The page worker
@@ -223,3 +233,23 @@ finish a valid first render before replacing the cached image. Future orientatio
 belongs in the adapter's output; do not add layout work to the APK. Per-device
 settings will require device IDs and separate profiles; v1 intentionally shares
 one displayer profile. No future program is advertised as selectable yet.
+
+### Reset display
+
+The **Reset display** button in Your displayer sends an ADB reboot to the Nook.
+Wake it with the n button first: a sleeping or powered-off Nook has no Wi-Fi
+connection and cannot receive a remote reboot. The dashboard shows a failure
+when connection, timeout, or reboot fails; it never queues a reboot for later.
+A successful response means ADB accepted the command, not that boot has finished.
+
+Install `adb` on the server (included by `install-on-pi.sh`) and set
+`"nook_adb_address": "192.0.2.78:5555"` in its config.json, then restart
+nookpanel. Replace this documentation-only IP with the actual Nook address; the example leaves it blank to avoid
+rebooting an unintended device. No root or sudo is needed for the server's ADB.
+The address is server-configured and cannot be supplied by the browser.
+
+`POST /api/display/reset` takes `{}` with `Content-Type: application/json`.
+It uses the same origin checks as settings writes. Connection/state/reboot
+commands have 8/4/5-second timeouts. Unreachable devices return 503, simultaneous
+requests and repeats within 30 seconds of success return 409, and success returns
+200 with a message. All commands select the configured device explicitly.

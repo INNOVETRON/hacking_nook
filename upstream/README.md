@@ -272,3 +272,16 @@ UV and temperature use smooth, shape-preserving cubic lines with value markers.
 The curves pass through the forecast values without inventing higher peaks or
 negative UV, and break across missing data. Precipitation (rain/snow) and wind
 retain hatched bars.
+
+### Server generation interval
+
+The local `retrying_server.py` adapter regenerates all configured pages every
+30 minutes by default, independently of the upstream client wake schedule.
+Change it under Program settings on port 8001 (15 minutes to 24 hours).
+It reads `server_refresh_seconds` from the control API every 15 seconds, retains
+the last interval during outages, and skips missed slots after slow renders.
+The existing regeneration lead (120 seconds) is retained: a 30-minute interval
+starts at :28 and :58. A running generation completes before another starts.
+For containers or a nonstandard control port, set `NOOK_SETTINGS_URL` to the
+reachable settings endpoint (default `http://127.0.0.1:8001/api/settings`).
+The initial startup render and existing retry behavior remain in place.

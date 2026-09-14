@@ -93,8 +93,10 @@ Implemented in NookPanel on 2026-09-12, with a **one-hour default refresh**:
   and rearm at completion. The server supplies the interval through the image response header.
 - Allow 25 seconds for Wi-Fi to associate; a 75-second watchdog bounds the whole
   attempt. A timed-out completion cannot replace the currently displayed image.
-- Automatic cycles sleep after five seconds; manual wake enables Wi-Fi and
-  leaves 60 seconds for ADB access. Touch input is ignored. No side-button remapping is used.
+- Automatic cycles sleep after five seconds; manual wake with the “n” button
+  enables Wi-Fi and fetches immediately, regardless of the refresh interval,
+  then leaves 60 seconds for ADB access after the fetch finishes. Opening the
+  app also fetches immediately. Touch input is ignored. No side-button remapping is used.
 - Turn Wi-Fi off, release the bounded refresh wake lock, clear the awake window
   flags, and set the system timeout to one second. Restore the original timeout
   on SCREEN_OFF, with a persisted recovery flag for the next app launch.

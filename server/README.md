@@ -253,3 +253,19 @@ It uses the same origin checks as settings writes. Connection/state/reboot
 commands have 8/4/5-second timeouts. Unreachable devices return 503, simultaneous
 requests and repeats within 30 seconds of success return 409, and success returns
 200 with a message. All commands select the configured device explicitly.
+
+### Simple Weather program
+
+Select **Simple Weather** with the second radio button in the control center.
+It uses the approved portrait concept B: month/day/weekday, a bold outlined
+weather icon, large current temperature, and four upcoming hourly forecasts with
+rain chance and wind. The footer shows the observation source/time. In Edmonton,
+current temperature uses ECCC Blatchford observations; forecast icons and hourly
+values use Open-Meteo.
+
+This program stays on its single page, independent of the original program's
+schedule and weather advisories. Switching back restores the existing schedule.
+Server generation and displayer intervals remain shared. The renderer prepares
+`simple-weather.png` alongside its scheduled pages (one additional Chromium render
+per generation). A failed fetch retains the last good image, and disk caches are
+separate for the two programs. No APK update is required.

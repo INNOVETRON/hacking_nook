@@ -82,10 +82,17 @@ def main():
             row['temperature']['value'] = -12 + i // 2 if kind == 'temperature' else 18
         page = cls(600, 800)
         if cls is TodayPage:
-            page.template(map_url=map_url, daily_summary=daily, hourly_forecasts=rows)
+            page.template(map_url=map_url, daily_summary=daily, hourly_forecasts=rows,
+                          current_conditions=dict(icon=daily["icon"],
+                              temperature={"unit": "°C", "value": 13, "feels_like": 12},
+                              weather_text="Currently clear"))
         else:
             page.template(map_url=map_url, tomorrow_forecast=daily, tomorrow_hourly=rows)
         html = str(page.airium)
+        if cls is TodayPage:
+            assert 'id="day-temp-lo"' not in html
+            assert '13°C' in html and 'Feels like 12' in html
+            assert 'Currently clear' in html
         assert f'data-metric="{kind}"' in html, name
         assert '<svg' in html and 'nan' not in html and 'None' not in html
         if kind in ('uv', 'temperature'):

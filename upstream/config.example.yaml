@@ -15,9 +15,9 @@ display:
     type: times
     "00:00:00": hourly
 weather:
-  # Keyless. `apikey` is still required by the config loader, but OpenMeteo
-  # ignores it — leave the placeholder.
-  service: openmeteo
+  # Edmonton: ECCC observed current temperature, Open-Meteo forecasts.
+  # For other cities use openmeteo. Both ignore the apikey placeholder.
+  service: openmeteo_eccc
   apikey: "unused"
   num_hourly_forecasts: 9
   metric: true

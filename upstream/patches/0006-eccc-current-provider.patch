@@ -1,0 +1,12 @@
+Register the ECCC observed-temperature provider alongside Open-Meteo.
+
+--- a/server/server.py
++++ b/server/server.py
+@@ -42,6 +42,7 @@
+ import weather.mock.mock  # noqa: F401
+ import weather.meteireann.meteireann  # noqa: F401
+ import weather.openmeteo.openmeteo  # noqa: F401
++import eccc_weather  # noqa: F401
+ from weather.registry import create as _create_weather_service, registered_services
+ 
+ 

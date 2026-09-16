@@ -1,0 +1,44 @@
+Today shows current conditions instead of the daily forecast temperature range.
+
+--- a/server/views/today.py
++++ b/server/views/today.py
+@@ -4,7 +4,7 @@
+ 
+ 
+ class TodayPage(SimplifiedPage):
+-    requires = ("map_url", "daily_summary", "hourly_forecasts")
++    requires = ("map_url", "current_conditions", "daily_summary", "hourly_forecasts")
+ 
+     def __init__(
+         self,
+@@ -35,24 +35,25 @@
+ 
+     def template(self, **kwargs):
+         ds = kwargs["daily_summary"]
+-        temp = ds["temperature"]
++        cc = kwargs["current_conditions"]
++        temp = cc["temperature"]
+ 
+         super().template(
+             map_url=kwargs["map_url"],
+             hourly_forecasts=kwargs.get("hourly_forecasts"),
+             forecast={
+                 "dt": dt.datetime.now(),
+-                "icon": ds["icon"],
++                "icon": cc["icon"],
+                 "temperature": {
+                     "unit": temp["unit"],
+-                    "min": temp.get("min"),
+-                    "max": temp.get("max", temp.get("value")),
++                    "min": None,
++                    "max": temp["value"],
+                     "feels_like": temp.get("feels_like"),
+                 },
+                 "wind": ds.get("wind"),
+                 "rain_probability": ds.get("rain_probability", 0),
+                 "uv_index": ds.get("uv_index"),
+-                "day_phrase": ds.get("day_phrase"),
++                "day_phrase": cc.get("weather_text"),
+                 "pollen": ds.get("pollen"),
+             },
+         )

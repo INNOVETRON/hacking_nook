@@ -972,3 +972,84 @@ connected. Wake it with the n button and try again." The button re-enabled.
 Settings API retained server interval 1800, device interval 3600 and page choices;
 image endpoint returned HTTP 200. Connected-device reboot remains unit-tested,
 not hardware-confirmed in this deployment session.
+
+## 2026-09-16 — Today current temperature (deployment blocked)
+
+Goal: show the current temperature on Today instead of the daily forecast range.
+Added overlay 0005 to request current_conditions and use its temperature,
+feels-like, icon and weather text. Daily rain probability and adaptive hourly
+chart remain forecasts. Upstream submodule source was not edited.
+Validation: all 35 unit tests passed, including applying the complete overlay
+series to an isolated checkout and checking positive, zero, negative and
+Fahrenheit current temperatures distinct from daily extrema. Updated the optional
+renderer integration check; visual rendering was not run in this environment.
+Deployment: three SSH attempts to the configured pi2 target returned No route
+to host. No live files changed and no service restarted. Once reachable, back up
+the live Today template, apply overlay 0005 and restart weather-cal when idle;
+verify a fresh Today image before marking deployment complete.
+
+## 2026-09-16 — Today current temperature deployed to nultra
+
+User corrected the deployment target: SSH alias nultra, 192.168.4.43 (hostname
+raspberrypi), not pi2. Verified weather-cal was idle and the live Today template
+matched the patch baseline. Saved the original under
+~/nook-backups/today-current-20260916/today.py, copied overlay 0005 into the
+server repo, checked and applied it, compiled the template and restarted weather-cal.
+Both weather-cal and nookpanel reported active. Today rendered at 16:21:07 MDT;
+retrieved and visually checked its 600x800 PNG: 17°C, feels like 14°, one current
+temperature with no daily low/high range, and the forecast chart preserved.
+The panel endpoint remained HTTP 200. The Nook itself was not woken or modified;
+it receives the new image on a subsequent fetch after the proxy picks it up.
+All four startup renders completed at 16:22:50 MDT; the renderer's today.png
+endpoint returned HTTP 200 at 16:23:27 and the next generation is scheduled at 16:28.
+
+## 2026-09-16 — ECCC observations for Edmonton current temperature
+
+User selected Environment Canada after comparing The Weather Network with
+Open-Meteo. Confirmed Open-Meteo current values are model data. ECCC city code
+s0000045 uses Edmonton Blatchford (not Edmonton International Airport): at
+22:00 UTC it measured 19.7 C, while the earlier model render showed 17 C.
+Added openmeteo_eccc provider and patch 0006, with bounded public XML fetching,
+quality/freshness checks, optional observed wind chill/humidex and observation
+time attribution. Open-Meteo forecasts, charts, icon and advisories remain.
+No model temperature fallback: failures use the existing image retry/recovery.
+Updated native/Docker deployment paths and documented the Edmonton-only scope.
+Validation: 40 unit tests passed; live provider test on nultra returned 20 C
+(rounded from 19.7), no unsupported feels-like, and ECCC/Blatchford/4:00 PM label.
+Deployment: backed up server.py and config.yaml under ~/nook-backups/eccc-20260916,
+installed adapters and patch 0006, switched weather.service to openmeteo_eccc,
+and restarted the idle weather-cal service. Both services reported active.
+A transient Open-Meteo DNS failure during startup recovered on the automatic
+retry. ECCC logged the 19.7 C observation and Today rendered at 16:33:42 MDT.
+Retrieved and visually checked the 600x800 image: 20 C and the complete
+ECCC / Blatchford / 4:00 PM attribution fit, with forecast chart preserved.
+All four renders completed at 16:35:40 MDT. Both panel.png and the renderer
+Today endpoint returned HTTP 200. Nook picks up the image on its next fetch.
+
+## 2026-09-16 — Simple Weather concept B
+
+User selected portrait concept B and requested implementation, deployment and Git push.
+Added a second Simple Weather program with radio selection in the control center.
+The new upstream page uses inline SVG: month/date/day, large outlined weather icon,
+large temperature, and four hourly columns with temperature, rain chance and wind.
+It retains ECCC current-temperature attribution and Open-Meteo forecast data.
+Switching programs preserves the original weather schedule/advisories; the proxy
+uses separate disk caches and retains its previous image until a valid replacement.
+Native/Docker deployment scripts install the page and patch 0007 registers it.
+Validation: 43 unit tests passed, including overlay application, ECCC validation,
+program persistence, advisory bypass, failed switching and separate caches, winter
+artwork and missing hourly data. JavaScript and shell syntax checks passed.
+Inspected a 600x800 Chrome preview and adjusted date spacing. Confirmed the real
+upstream page interface accepts serialized bytes before starting final generation.
+Deployment: baseline hashes of the three control files matched local Git before
+replacement. Backups are under ~/nook-backups/simple-weather-20260916 on nultra.
+Installed the page, patch, control changes and deployment scripts, then restarted
+weather-cal and nookpanel. Browser verification exercised radio selection, saving
+Simple Weather settings, switching back and retaining the original page times,
+and switching to Simple Weather again. Existing device refresh remains 60 minutes
+and server generation remains 30 minutes; no APK or device firmware changes.
+Final verification: inspected the deployed 600x800 PNG and saved it as
+`docs/images/page-simple-weather.png`. At 17:28:11 the proxy served Simple Weather;
+SHA-256 of panel.png matched the renderer's simple-weather.png exactly. Both
+services were active. The Nook fetched panel.png with HTTP 200 at 17:28:30.
+Simple Weather remains selected. Physical screen appearance was not inspected.

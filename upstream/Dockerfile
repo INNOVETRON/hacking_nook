@@ -18,6 +18,9 @@ RUN chown -R app:app /app/google /app/nook_mapview.py /app/linemap.py /app/fonts
 
 COPY upstream/retrying_server.py /app/retrying_server.py
 COPY upstream/smart_chart.py /app/smart_chart.py
+COPY upstream/eccc_current.py /app/eccc_current.py
+COPY upstream/eccc_weather.py /app/eccc_weather.py
+COPY upstream/simple_weather.py /app/simple_weather.py
 COPY upstream/patches/ /tmp/nook-patches/
 # Apply the same overlays as the native Pi install (strip the server/ prefix).
 RUN for patch in /tmp/nook-patches/*.patch; do git apply -p2 "$patch" || exit 1; done \

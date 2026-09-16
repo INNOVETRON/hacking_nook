@@ -18,6 +18,23 @@ Local patches and adapters also customize page selection, charts, and generation
 
 Weather needs no key either: upstream ships an `openmeteo` provider.
 
+### Edmonton current observations
+
+Set `weather.service: openmeteo_eccc` for Edmonton to use Environment Canada's
+Edmonton Blatchford station temperature. `eccc_current.py` fetches the public
+[Citypage XML feed](https://eccc-msc.github.io/open-data/msc-data/citypage-weather/readme_citypageweather-datamart_en/)
+for Edmonton (`s0000045`), checks the observation timestamp and temperature quality,
+and rejects readings older than three hours. Today shows the ECCC source, station,
+and observation time in Edmonton local time. Feels-like is shown only when ECCC
+supplies wind chill or humidex; a model feels-like value is not mixed into it.
+
+Open-Meteo still supplies hourly/daily forecasts, charts, the weather icon and
+advisory selection. ECCC observations are normally hourly; the existing server
+and device refresh settings still apply. If observations cannot be fetched,
+generation retries and retains the previous image without silently substituting
+a model temperature. The adapter currently supports only `location: Edmonton`;
+other cities should use `openmeteo`. No API key is needed.
+
 ## Run it
 
 ```bash
@@ -225,6 +242,11 @@ Run failure-path tests with `python3 -m unittest discover -s tests` from the rep
 
 ## Adaptive Today and Tomorrow charts
 
+Today's main temperature, feels-like value, icon, and condition text use current
+conditions at generation time (patch `0005`), rather than the daily low/high.
+The rain probability and bottom chart remain forecasts. Readings refresh with
+the configured server generation interval; the Nook receives them on its next fetch.
+
 Only the bottom chart in Today/Tomorrow changes. The hourly and daily pages keep
 their layouts. Selection happens on each scheduled render, with no new Nook wakeups.
 
@@ -285,3 +307,12 @@ starts at :28 and :58. A running generation completes before another starts.
 For containers or a nonstandard control port, set `NOOK_SETTINGS_URL` to the
 reachable settings endpoint (default `http://127.0.0.1:8001/api/settings`).
 The initial startup render and existing retry behavior remain in place.
+
+### Simple Weather artwork
+
+`simple_weather.py` implements portrait concept B with inline SVG and local
+sans-serif fonts at 600×800. Patch `0007` adds the page to each generation,
+independent of the original schedule. It requires current conditions and hourly
+forecasts; its four columns show the first four upcoming hours. Missing hourly
+values appear as dashes. The server control center selects this image through
+`active_program: simple-weather`; `weather-cal` retains its existing schedule.

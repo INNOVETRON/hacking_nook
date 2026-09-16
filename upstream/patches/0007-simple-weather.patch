@@ -1,0 +1,21 @@
+Add the independently selectable Simple Weather program.
+
+--- a/server/server.py
++++ b/server/server.py
+@@ -44,6 +44,7 @@
+ import weather.meteireann.meteireann  # noqa: F401
+ import weather.openmeteo.openmeteo  # noqa: F401
+ import eccc_weather  # noqa: F401
++from simple_weather import SimpleWeatherPage
+ from weather.registry import create as _create_weather_service, registered_services
+ 
+ 
+@@ -243,6 +244,8 @@
+         pages = [page for page in pages if f"{page.name}.png" in scheduled]
+         log.info("rendering %d of 5 pages: %s",
+                  len(pages), ", ".join(page.name for page in pages))
++    # Always prepare the independently selectable simple program.
++    pages.append(SimpleWeatherPage(*geometry))
+     # map_url is a constant, so it comes from a StaticSource; the weather
+     # service supplies the rest. Each page declares what it needs in
+     # Page.requires.

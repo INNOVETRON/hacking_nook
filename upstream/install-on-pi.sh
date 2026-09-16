@@ -78,6 +78,9 @@ install -m 644 "$REPO/server/fonts.py"   "$APP/fonts.py"
 install -m 644 "$REPO/upstream/google_api_shim.py" "$APP/google/api.py"
 install -m 644 "$REPO/upstream/retrying_server.py" "$APP/retrying_server.py"
 install -m 644 "$REPO/upstream/smart_chart.py" "$APP/smart_chart.py"
+install -m 644 "$REPO/upstream/eccc_current.py" "$APP/eccc_current.py"
+install -m 644 "$REPO/upstream/eccc_weather.py" "$APP/eccc_weather.py"
+install -m 644 "$REPO/upstream/simple_weather.py" "$APP/simple_weather.py"
 
 # server.py hardcodes config.yaml beside itself (`cwd` on line 30 is
 # os.path.dirname(os.path.realpath(__file__)), not the process working

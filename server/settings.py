@@ -10,7 +10,12 @@ from urllib.parse import urlsplit
 import pagechoice
 from display_control import DisplayControl, ResetError
 
-PROGRAMS = [{"id": "weather-cal", "name": "Weather & forecast", "description": "Your day, at a glance", "pages": ["hourly", "today", "daily", "tomorrow"]}]
+PROGRAMS = [
+    {"id": "weather-cal", "name": "Weather & forecast", "description": "Your day, at a glance",
+     "pages": ["hourly", "today", "daily", "tomorrow"]},
+    {"id": "simple-weather", "name": "Simple Weather", "description": "Big, clear weather and the next four hours",
+     "pages": []},
+]
 
 
 class Settings:
@@ -34,7 +39,7 @@ class Settings:
         keys = {"active_program", "device_refresh_seconds", "enabled_pages", "page_schedule", "advisories"}
         if not isinstance(data, dict) or not keys <= set(data) or set(data) - keys - {"server_refresh_seconds"}:
             raise ValueError("Send all settings fields, without unknown fields.")
-        if data["active_program"] != "weather-cal":
+        if data["active_program"] not in {p["id"] for p in PROGRAMS}:
             raise ValueError("Unknown program.")
         interval = data["device_refresh_seconds"]
         if type(interval) is not int or not 60 <= interval <= 86400:
@@ -43,7 +48,7 @@ class Settings:
         if type(server_interval) is not int or not 900 <= server_interval <= 86400:
             raise ValueError("Server generation must be between 15 minutes and 24 hours.")
         enabled = data["enabled_pages"]
-        if not isinstance(enabled, list) or not enabled or any(p not in PROGRAMS[0]["pages"] for p in enabled) or len(set(enabled)) != len(enabled):
+        if not isinstance(enabled, list) or not enabled or any(p not in next(p["pages"] for p in PROGRAMS if p["id"] == "weather-cal") for p in enabled) or len(set(enabled)) != len(enabled):
             raise ValueError("Enable at least one valid render, without duplicates.")
         schedule = data["page_schedule"]
         if not isinstance(schedule, dict) or not schedule or any(not re.fullmatch(r"(?:[01]\d|2[0-3]):[0-5]\d", t) or p not in enabled for t, p in schedule.items()):

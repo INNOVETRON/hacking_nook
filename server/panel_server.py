@@ -88,6 +88,8 @@ class RenderedPages:
                      or config.get("mirror_base")   # old name, still honoured
                      or "").rstrip("/")
         source = self.base or config.get("mirror_url", "")
+        if config.get("active_program") == "simple-weather":
+            source += "|simple-weather"
         key = hashlib.sha256(source.encode()).hexdigest()[:16]
         self.cache_path = Path(cache_dir) / ("last-rendered-" + key + ".png")
         self.retrying = False
@@ -115,6 +117,9 @@ class RenderedPages:
         """(url, page, reason) for this refresh."""
         if not self.base:
             return self.config["mirror_url"], None, None    # old fixed-URL form
+
+        if self.config.get("active_program") == "simple-weather":
+            return f"{self.base}/simple-weather.png", "simple-weather", "selected program"
 
         now = datetime.now(ZoneInfo(self.config["timezone"]))
         try:
@@ -148,6 +153,11 @@ class RenderedPages:
             self._degrade()
             return
 
+        source = self.base or self.config.get("mirror_url", "")
+        if page == "simple-weather":
+            source += "|simple-weather"
+        key = hashlib.sha256(source.encode()).hexdigest()[:16]
+        self.cache_path = self.cache_path.with_name("last-rendered-" + key + ".png")
         self._save(body)
         self.retrying = False
         with self.lock:

@@ -1053,3 +1053,13 @@ Final verification: inspected the deployed 600x800 PNG and saved it as
 SHA-256 of panel.png matched the renderer's simple-weather.png exactly. Both
 services were active. The Nook fetched panel.png with HTTP 200 at 17:28:30.
 Simple Weather remains selected. Physical screen appearance was not inspected.
+
+## 2026-09-16 — Simple Weather header alignment
+
+Moved the large day number to the left and stacked weekday above month on the
+right, as requested. Inspected the 600x800 Chrome preview; Python compilation
+and whitespace checks passed. Backed up the prior adapter under
+~/nook-backups/simple-header-20260916 on nultra, deployed the update and restarted
+the idle renderer. The existing program selection and timing settings are unchanged.
+The updated page rendered at 17:37:55 MDT. Visually inspected the deployed PNG;
+panel.png and simple-weather.png SHA-256 hashes match. Updated the reference image.

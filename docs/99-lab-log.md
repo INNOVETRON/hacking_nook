@@ -1187,3 +1187,14 @@ not a physical overnight battery measurement. No APK update was required.
 - Browser verification at 375 × 812 found no horizontal overflow. All six
   programs returned valid 600 × 800 previews. Nook installation pending wake:
   known address 192.168.4.78:5555 was unreachable during this work.
+
+### 2026-09-17 — NookPanel 0.4.0 installed and verified
+
+- User woke the Nook. ADB connected to 192.168.4.78:5555; confirmed BNRV300,
+  firmware 1.2.2. Installed the tested APK with `adb install -r`: Success.
+- Launched NookPanel and verified the new process completed a live image fetch.
+  Client log: `next fetch in 1800 seconds; consecutive failures=0`, followed by
+  `refresh succeeded`. The server-provided 30-minute wake alarm was armed.
+- This completes the APK installation pending in the mobile dashboard entry.
+  Failure backoff was tested before installation; no outage was induced on the
+  user's live display.

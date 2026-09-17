@@ -65,8 +65,8 @@ class ActivityTests(unittest.TestCase):
         handler, renderer = self.handler()
         handler.wfile = Mock()
         handler.wfile.write.side_effect = BrokenPipeError
-        with self.assertRaises(BrokenPipeError):
-            handler.do_GET()
+        handler.do_GET()
+        renderer.activity.failed.assert_called_once()
         renderer.activity.record.assert_not_called()
 
 

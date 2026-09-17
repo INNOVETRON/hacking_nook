@@ -1114,3 +1114,22 @@ not a physical overnight battery measurement. No APK update was required.
   `/home/afshin/nook-backups/display-activity-20260916`, restarted only nookpanel.
 - Validation: 61 unit tests pass; live dashboard and options dialog verified.
   Nook BNRV300 firmware 1.2.2 unchanged; no device reset or APK update performed.
+
+### 2026-09-16 — Complete display improvement suite
+
+- Added the eight-item checklist in display-roadmap.md, battery telemetry and
+  learned discharge estimate, overdue/failed fetch reporting, daily hourly-baseline
+  comparison, exact cached-image preview, clock/calendar banner, and optional
+  daily program switching that bounds the device's next wake.
+- Simple Weather now has a 12-hour trend and feels-like/precipitation/wind summary.
+  Quiet hours use a distinct morning briefing with forecast temperature, sunrise,
+  four morning hours, and wake time. Reviewed day/night/clock 600x800 artwork.
+- Confirmed Nook model BNRV300 and firmware 1.2.2 via ADB. Built APK 0.3.0 using
+  the pinned ADT container, installed with adb install -r, and launched it. Live
+  server received 93% battery, unplugged, zero reported failures. Estimates remain
+  unknown until sufficient discharge readings accumulate; no extra wake is added.
+- Backed up nultra server/renderer files under
+  /home/afshin/nook-backups/display-suite-20260916 and deployed overlays. Existing
+  Simple Weather selection and sleep settings retained; schedule is opt-in.
+- Validation: 66 tests passed and real weather-cal integration verified atomic
+  overnight PNG metadata and six-hour sleep. No firmware flash or device reset.

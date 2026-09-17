@@ -43,6 +43,38 @@ def symbol(icon):
     return '<g fill="white" stroke="black" stroke-width="6" stroke-linecap="round" stroke-linejoin="round">'+art+'</g>', label
 
 
+def briefing(current,hourly):
+    parts=[]
+    feels=current.get('temperature',{}).get('feels_like')
+    if feels is not None:
+        parts.append('Feels '+str(round(feels))+'°')
+    wet=next((r for r in hourly[:6] if (r.get('rain_probability') or 0)>=50),None)
+    if wet:
+        kind='Snow' if 'snow' in (wet.get('icon') or '') else 'Rain'
+        parts.append(kind+' '+wet['dt'].strftime('%-I%p').lower())
+    else:
+        parts.append('Low precip. chance' if hourly and all(r.get('rain_probability') is not None for r in hourly[:6]) else 'Precip. unavailable')
+    winds=[(r.get('wind') or {}).get('value') for r in hourly[:6]]
+    winds=[w for w in winds if w is not None]
+    if winds:
+        unit=(hourly[0].get('wind') or {}).get('unit','kmh')
+        strong = max(winds) >= (25 if unit=='mph' else 40)
+        parts.append(('Strong wind ' if strong else 'Wind ')+str(round(max(winds)))+(' km/h' if unit=='kmh' else ' '+unit))
+    return ' · '.join(parts)
+
+
+def trend(rows):
+    valid=[(i,r['temperature'].get('value')) for i,r in enumerate(rows) if r['temperature'].get('value') is not None]
+    if len(valid)<2:
+        return '<text x="300" y="460" text-anchor="middle" font-size="20">Trend unavailable</text>'
+    low,high=min(v for _,v in valid),max(v for _,v in valid)
+    span=max(4,high-low)
+    points=[(42+i*516/max(1,len(rows)-1),470-(v-low)*65/span) for i,v in valid]
+    line=' '.join(f'{x:.1f},{y:.1f}' for x,y in points)
+    labels=''.join(f'<text x="{42+i*516/max(1,len(rows)-1):.1f}" y="509" text-anchor="middle" font-size="17">{escape(rows[i]["dt"].strftime("%-I%p"))}</text>' for i in sorted(set([0,len(rows)//2,len(rows)-1])))
+    return f'<text x="30" y="391" font-size="16">NEXT {len(rows)} HOURS · {low}° TO {high}°</text><polyline points="{line}" fill="none" stroke="black" stroke-width="4" stroke-linejoin="round"/>'+labels
+
+
 def artwork(current, hourly, now=None, overnight=None):
     now = now or datetime.now()
     pieces = []
@@ -57,11 +89,35 @@ def artwork(current, hourly, now=None, overnight=None):
     text(394, 60,now.strftime('%A').upper(),30)
     text(394,102,now.strftime('%B').upper(),26)
     pieces.append('</g>')
-    label=icon(188,136,224,current.get('icon'))
-    temp=current['temperature']
-    value=f"{temp['value']}{temp['unit']}"
-    text(300,477,value, min(132, 520/max(1,len(value))/.64))
-    text(300,521,'MORNING FORECAST' if overnight else label,25 if overnight else (30 if len(label)<14 else 25))
+    if overnight:
+        # An unmistakable night card: dark masthead, tomorrow's morning reading,
+        # sunrise, and an explicit wake time rather than an old current reading.
+        pieces = ['<rect width="600" height="195" fill="black"/><g fill="white">']
+        text(300,45,'WHILE YOU SLEEP',24)
+        text(300,106,'MORNING BRIEFING',38)
+        text(300,151,overnight.strftime('%A · %B %-d').upper(),23)
+        pieces.append('</g>')
+        first = hourly[0] if hourly else current
+        label=icon(50,220,150,first.get('icon'))
+        value=first['temperature'].get('value')
+        text(395,335,('—' if value is None else str(value)+'°'),110)
+        text(395,377,'AT '+overnight.strftime('%-I:%M %p'),22)
+        sunrise=first.get('sunrise')
+        dawn=datetime.fromisoformat(sunrise).strftime('%-I:%M %p') if sunrise else '—'
+        text(300,425,'SUNRISE '+dawn+'  ·  '+label,21)
+        summary=briefing(first,hourly)
+        text(300,471,summary,min(19,550/max(1,len(summary))/.62))
+        pieces.append('<path d="M 24 503 H 576" stroke="black" stroke-width="3"/>')
+        text(300,537,'MORNING FORECAST',22)
+    else:
+        label=icon(42,152,150,current.get('icon'))
+        temp=current['temperature']
+        value=f"{temp['value']}{temp['unit']}"
+        text(387,268,value,min(98,350/max(1,len(value))/.64))
+        text(387,313,label,23 if len(label)<14 else 18)
+        summary=briefing(current,hourly)
+        text(300,354,summary,min(19,550/max(1,len(summary))/.62))
+        pieces.append(trend(hourly[:12]))
     rows=list(hourly[:4])
     for i in range(4):
         x=84+i*144
@@ -75,7 +131,7 @@ def artwork(current, hourly, now=None, overnight=None):
         icon(x-42,592,84,row.get('icon'))
         text(x,709,('—' if row['temperature'].get('value') is None else str(row['temperature']['value'])+'°'),47)
         pop=row.get('rain_probability')
-        text(x,735,'—' if pop is None else f'{round(pop)}% rain',18)
+        text(x,735,'—' if pop is None else f'{round(pop)}% precip.',18)
         wind=row.get('wind') or {}
         bearing=wind.get('direction_degrees')
         direction='' if bearing is None else ['N','NE','E','SE','S','SW','W','NW'][int((bearing+22.5)//45)%8]

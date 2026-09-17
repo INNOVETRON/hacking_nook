@@ -318,3 +318,27 @@ finished displaying it. Events are grouped in the configured timezone and stored
 atomically in `server/.cache/display-fetches.json`. Today and yesterday are shown;
 tracking begins at deployment, with no invented historical events. Display options
 now live inside Your display, including the existing Reset display action.
+
+### Display suite
+
+- `/api/display/preview.png` serves the exact cached image without recording a
+  device fetch; status includes image generation time where available.
+- NookPanel 0.3 sends battery percentage, plugged-in state, and a persistent total
+  of failed fetch attempts on its normal request. No extra wake-ups are introduced.
+  Failures while offline are visible after the next successful connection.
+- Remaining days use the current uninterrupted discharge segment, requiring at
+  least 24 hours and a three-percentage-point drop. Charging or an upward reading
+  resets that estimate. Battery readings are retained for 30 days.
+- Overdue means five minutes beyond the last sent timer. It is not proof of a
+  particular network problem. Broken transfers and unavailable images are logged.
+- The daily report compares successful fetches with an hourly baseline over
+  observed intervals, capped at their sent timers. Unexplained offline time is
+  excluded. It measures fetch counts rather than battery energy.
+- Optional `program_schedule_enabled` and `program_schedule` settings map local
+  HH:MM times to `simple-weather`, `weather-cal`, or `clock-calendar`. The last slot
+  carries overnight; next wake is capped at a program boundary. Selecting a radio
+  program disables scheduling. The clock is explicitly a server-time snapshot.
+- Simple Weather now shows a 12-hour trend and leaving-home summary. During quiet
+  hours its distinct morning briefing shows the first morning forecast reading,
+  sunrise, four morning hours, and next wake time. It does not label a nighttime
+  observation as the morning forecast.

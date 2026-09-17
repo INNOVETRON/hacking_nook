@@ -49,6 +49,9 @@ import settings
 from weather import Weather
 import adaptive_refresh
 from display_activity import DisplayActivity
+import program_schedule
+import display_preview
+from email.utils import parsedate_to_datetime
 
 LOG = logging.getLogger("nookpanel")
 
@@ -120,7 +123,7 @@ class RenderedPages:
         if not self.base:
             return self.config["mirror_url"], None, None    # old fixed-URL form
 
-        if self.config.get("active_program") == "simple-weather":
+        if program_schedule.active(self.config) == "simple-weather":
             return f"{self.base}/simple-weather.png", "simple-weather", "selected program"
 
         now = datetime.now(ZoneInfo(self.config["timezone"]))
@@ -133,6 +136,13 @@ class RenderedPages:
         return f"{self.base}/{page}.png", page, reason
 
     def refresh(self):
+        if self.base and program_schedule.active(self.config) == 'clock-calendar':
+            with self.lock:
+                self.png = display_preview.clock_image(datetime.now(ZoneInfo(self.config['timezone'])))
+                self.page = 'clock-calendar'
+                self.fetched_at = time.time()
+            self.retrying = False
+            return
         url, page, reason = self._target()
         if page and page != self.page:
             LOG.info("showing %s%s", page, f" - {reason}" if reason else "")
@@ -144,6 +154,11 @@ class RenderedPages:
         try:
             with urllib.request.urlopen(request, timeout=30) as response:
                 body = response.read()
+                modified = getattr(response, 'headers', {}).get('Last-Modified')
+                try:
+                    generated_at = parsedate_to_datetime(modified).timestamp() if modified else None
+                except (ValueError, TypeError):
+                    generated_at = None
         except Exception as exc:
             LOG.warning("fetch of %s failed: %s", url, exc)
             self._degrade()
@@ -166,6 +181,7 @@ class RenderedPages:
             self.png = body
             self.fetched_at = time.time()
             self.page = page
+            self.image_generated_at = generated_at
         LOG.info("serving %s (%d bytes)", page or url, len(body))
 
     def _save(self, body):
@@ -211,6 +227,9 @@ class RenderedPages:
         interval = self.config.get("refresh_seconds", 300)
         while True:
             delay = max(1, self.config.get("retry_seconds", 30)) if self.retrying else self.config.get("refresh_seconds", 300)
+            boundary = program_schedule.next_boundary(self.config)
+            if boundary:
+                delay = min(delay, max(1, boundary-time.time()))
             self.settings_changed.wait(delay)
             self.settings_changed.clear()
             try:
@@ -287,7 +306,10 @@ def make_handler(renderer):
             path = urllib.parse.urlparse(self.path).path
             if path in ("/panel.png", "/panel"):
                 body = renderer.current()
+                is_nook = getattr(self, 'headers', {}).get("User-Agent", "").startswith("NookPanel/")
                 if not body:
+                    if is_nook:
+                        renderer.activity.failed("Image unavailable (HTTP 503)")
                     self.send_response(503)
                     self.send_header("X-Nook-Refresh-Seconds", str(adaptive_refresh.from_png(body, renderer.config)[0]))
                     self.send_header("Retry-After", str(max(1, renderer.config.get("retry_seconds", 30))))
@@ -295,17 +317,29 @@ def make_handler(renderer):
                     self.send_header("Cache-Control", "no-store")
                     self.end_headers()
                     return
-                seconds, reason = adaptive_refresh.from_png(body, renderer.config)
+                effective = dict(renderer.config, active_program=program_schedule.active(renderer.config))
+                seconds, reason = adaptive_refresh.from_png(body, effective)
+                boundary = program_schedule.next_boundary(renderer.config)
+                if boundary and boundary-time.time() < seconds:
+                    seconds, reason = max(60, int(boundary-time.time())), 'Scheduled program change'
+                actual = display_preview.metadata(body).get('program')
+                if actual and actual != effective['active_program']:
+                    seconds, reason = min(seconds, 900), 'Waiting for selected image'
                 self.send_response(200)
                 self.send_header("X-Nook-Refresh-Seconds", str(seconds))
                 self.send_header("Content-Type", "image/png")
                 self.send_header("Content-Length", str(len(body)))
                 self.send_header("Cache-Control", "no-store")
                 self.end_headers()
-                self.wfile.write(body)
-                self.wfile.flush()
-                if self.headers.get("User-Agent", "").startswith("NookPanel/"):
-                    renderer.activity.record(seconds, reason)
+                try:
+                    self.wfile.write(body)
+                    self.wfile.flush()
+                except (OSError, ConnectionError):
+                    if is_nook:
+                        renderer.activity.failed("Connection interrupted during image transfer")
+                    return
+                if is_nook:
+                    renderer.activity.record(seconds, reason, headers=self.headers)
             elif path == "/healthz":
                 self._text("ok")
             elif path == "/":

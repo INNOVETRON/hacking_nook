@@ -38,6 +38,21 @@ class SimpleWeather(unittest.TestCase):
         self.assertNotIn('None', text)
         self.assertEqual(root.attrib['viewBox'], '0 0 600 800')
 
+    def test_overnight_shows_morning_temperature_and_sunrise(self):
+        module = types.ModuleType('views.page')
+        module.Page = object
+        with patch.dict(sys.modules, {'views.page': module}):
+            artwork = runpy.run_path(str(ROOT / 'upstream/simple_weather.py'))['artwork']
+        now=datetime(2026,9,17)
+        current={'icon':'clear','temperature':{'value':20,'unit':'°C'}}
+        row={'dt':now.replace(hour=6),'icon':'clear','temperature':{'value':8},'sunrise':'2026-09-17T07:10','rain_probability':0}
+        text=''.join(ET.fromstring(artwork(current,[row],now,now.replace(hour=6))).itertext())
+        self.assertIn('MORNING BRIEFING',text)
+        self.assertIn('SUNRISE 7:10 AM',text)
+        self.assertIn('8°',text)
+        self.assertNotIn('20°C',text)
+        self.assertIn('NEXT UPDATE 6:00 AM',text)
+
     def test_selection_bypasses_advisories_and_retains_image_on_failure(self):
         body = png()
         config = {'renderer_url':'http://renderer','active_program':'simple-weather',

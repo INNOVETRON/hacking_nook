@@ -228,6 +228,10 @@ public class PanelActivity extends Activity {
     private void finishRefresh(Bitmap bitmap) {
         handler.removeCallbacks(watchdog);
         fetching = false;
+        if (bitmap == null) {
+            Config.prefs(this).edit().putInt("failed_fetches",
+                    Config.prefs(this).getInt("failed_fetches", 0) + 1).commit();
+        }
         long now = System.currentTimeMillis();
         Config.prefs(this).edit().putLong("last_attempt_at", now)
                 .putString("last_attempt_url", fetchUrl).commit();

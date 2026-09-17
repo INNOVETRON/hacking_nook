@@ -39,9 +39,20 @@ public final class ImageFetcher {
             connection = (HttpURLConnection) url.openConnection();
             connection.setConnectTimeout(CONNECT_TIMEOUT_MS);
             connection.setReadTimeout(READ_TIMEOUT_MS);
-            connection.setRequestProperty("User-Agent", "NookPanel/0.1 (BNRV300)");
+            connection.setRequestProperty("User-Agent", "NookPanel/0.3 (BNRV300)");
             connection.setRequestProperty("Connection", "close");
 
+            android.content.Intent battery = context.registerReceiver(null,
+                    new android.content.IntentFilter(android.content.Intent.ACTION_BATTERY_CHANGED));
+            if (battery != null) {
+                int level = battery.getIntExtra("level", -1);
+                int scale = battery.getIntExtra("scale", -1);
+                if (level >= 0 && scale > 0) {
+                    connection.setRequestProperty("X-Nook-Battery", String.valueOf(Math.min(100L, level * 100L / scale)));
+                    connection.setRequestProperty("X-Nook-Charging", battery.getIntExtra("plugged", 0) != 0 ? "1" : "0");
+                }
+            }
+            connection.setRequestProperty("X-Nook-Failures", String.valueOf(Config.prefs(context).getInt("failed_fetches", 0)));
             int status = connection.getResponseCode();
             // Accept settings even on a 503 so recovery can use the new interval.
             int interval = connection.getHeaderFieldInt("X-Nook-Refresh-Seconds", -1);

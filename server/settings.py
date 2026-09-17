@@ -9,9 +9,12 @@ from http.server import BaseHTTPRequestHandler
 from urllib.parse import urlsplit
 import pagechoice
 import adaptive_refresh
+import program_schedule
+import display_preview
 from display_control import DisplayControl, ResetError
 
 PROGRAMS = [
+    {"id": "clock-calendar", "name": "Clock & calendar", "description": "A quiet clock snapshot and monthly calendar", "pages": []},
     {"id": "weather-cal", "name": "Weather & forecast", "description": "Your day, at a glance",
      "pages": ["hourly", "today", "daily", "tomorrow"]},
     {"id": "simple-weather", "name": "Simple Weather", "description": "Big, clear weather and the next four hours",
@@ -28,8 +31,10 @@ class Settings:
 
     def snapshot(self):
         c = self.renderer.config
-        seconds, reason = adaptive_refresh.from_png(getattr(self.renderer, "current", lambda: b"")(), c)
-        return {"refresh_preview": {"seconds": seconds, "reason": reason}, "version": 1, "programs": PROGRAMS, "active_program": c.get("active_program", "weather-cal"),
+        seconds, reason = adaptive_refresh.from_png(getattr(self.renderer, "current", lambda: b"")(), dict(c, active_program=program_schedule.active(c)))
+        return {"program_schedule_enabled": c.get('program_schedule_enabled', False),
+                "program_schedule": c.get('program_schedule', {'06:00':'simple-weather','10:00':'clock-calendar','18:00':'weather-cal','22:00':'simple-weather'}),
+                "current_program": program_schedule.active(c), "refresh_preview": {"seconds": seconds, "reason": reason}, "version": 1, "programs": PROGRAMS, "active_program": c.get("active_program", "weather-cal"),
                 "server_refresh_seconds": c.get("server_refresh_seconds", 1800),
                 "device_refresh_seconds": c.get("device_refresh_seconds", 3600),
                 "refresh_mode": c.get("refresh_mode", "fixed"),
@@ -41,7 +46,7 @@ class Settings:
 
     def save(self, data):
         keys = {"active_program", "device_refresh_seconds", "enabled_pages", "page_schedule", "advisories"}
-        if not isinstance(data, dict) or not keys <= set(data) or set(data) - keys - {"server_refresh_seconds", "refresh_mode", "adaptive_refresh"}:
+        if not isinstance(data, dict) or not keys <= set(data) or set(data) - keys - {"server_refresh_seconds", "refresh_mode", "adaptive_refresh", "program_schedule_enabled", "program_schedule"}:
             raise ValueError("Send all settings fields, without unknown fields.")
         if data["active_program"] not in {p["id"] for p in PROGRAMS}:
             raise ValueError("Unknown program.")
@@ -52,6 +57,7 @@ class Settings:
         if type(server_interval) is not int or not 900 <= server_interval <= 86400:
             raise ValueError("Server generation must be between 15 minutes and 24 hours.")
         adaptive_refresh.validate({**self.renderer.config, **data})
+        program_schedule.validate({**self.renderer.config, **data})
         enabled = data["enabled_pages"]
         if not isinstance(enabled, list) or not enabled or any(p not in next(p["pages"] for p in PROGRAMS if p["id"] == "weather-cal") for p in enabled) or len(set(enabled)) != len(enabled):
             raise ValueError("Enable at least one valid render, without duplicates.")
@@ -100,8 +106,17 @@ def make_handler(settings):
             path = urlsplit(self.path).path
             if path == "/api/settings":
                 self.reply(200, settings.snapshot())
+            elif path == "/api/display/preview.png":
+                body = settings.renderer.current()
+                self.reply(200 if body else 503, body or b'', 'image/png')
             elif path == "/api/display/status":
-                self.reply(200, settings.renderer.activity.snapshot(settings.renderer.config["timezone"]))
+                result = settings.renderer.activity.snapshot(settings.renderer.config["timezone"])
+                result['image'] = display_preview.metadata(settings.renderer.current())
+                if not result['image']:
+                    result['image'] = {'program': getattr(settings.renderer, 'page', None), 'generated_at': getattr(settings.renderer, 'image_generated_at', None)}
+                result['renderer_retrying'] = bool(getattr(settings.renderer, 'retrying', False))
+                result['current_program'] = program_schedule.active(settings.renderer.config)
+                self.reply(200, result)
             elif path == "/":
                 self.reply(200, Path(__file__).with_name("dashboard.html").read_bytes(), "text/html; charset=utf-8")
             else:

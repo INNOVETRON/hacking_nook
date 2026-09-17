@@ -100,6 +100,8 @@ def make_handler(settings):
             path = urlsplit(self.path).path
             if path == "/api/settings":
                 self.reply(200, settings.snapshot())
+            elif path == "/api/display/status":
+                self.reply(200, settings.renderer.activity.snapshot(settings.renderer.config["timezone"]))
             elif path == "/":
                 self.reply(200, Path(__file__).with_name("dashboard.html").read_bytes(), "text/html; charset=utf-8")
             else:

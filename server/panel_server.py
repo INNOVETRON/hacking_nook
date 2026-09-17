@@ -48,6 +48,7 @@ import pagechoice
 import settings
 from weather import Weather
 import adaptive_refresh
+from display_activity import DisplayActivity
 
 LOG = logging.getLogger("nookpanel")
 
@@ -294,13 +295,17 @@ def make_handler(renderer):
                     self.send_header("Cache-Control", "no-store")
                     self.end_headers()
                     return
+                seconds, reason = adaptive_refresh.from_png(body, renderer.config)
                 self.send_response(200)
-                self.send_header("X-Nook-Refresh-Seconds", str(adaptive_refresh.from_png(body, renderer.config)[0]))
+                self.send_header("X-Nook-Refresh-Seconds", str(seconds))
                 self.send_header("Content-Type", "image/png")
                 self.send_header("Content-Length", str(len(body)))
                 self.send_header("Cache-Control", "no-store")
                 self.end_headers()
                 self.wfile.write(body)
+                self.wfile.flush()
+                if self.headers.get("User-Agent", "").startswith("NookPanel/"):
+                    renderer.activity.record(seconds, reason)
             elif path == "/healthz":
                 self._text("ok")
             elif path == "/":
@@ -378,6 +383,7 @@ def main():
         print("wrote", args.once)
         return
 
+    renderer.activity = DisplayActivity(Path(cache_dir) / "display-fetches.json")
     threading.Thread(target=renderer.run_forever, daemon=True).start()
 
     control = ThreadingHTTPServer(("0.0.0.0", config["settings_port"]),

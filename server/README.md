@@ -308,3 +308,13 @@ may reuse the preceding image; set server generation to 15 minutes if you want
 freshly generated images at that frequency. Quiet hours intentionally suppress
 weather-triggered wakes. A sleeping Nook cannot learn about an unexpected weather
 change until its next fetch. Manual wakes still fetch normally.
+
+Display activity is available at `/api/display/status` and on the control room.
+Only successful `/panel.png` or `/panel` deliveries to the NookPanel client count;
+previews and failed requests do not. The next fetch estimate uses the interval
+actually sent with the last image, so changing settings does not move that estimate.
+Delivery confirms the server finished writing the image, not that the device
+finished displaying it. Events are grouped in the configured timezone and stored
+atomically in `server/.cache/display-fetches.json`. Today and yesterday are shown;
+tracking begins at deployment, with no invented historical events. Display options
+now live inside Your display, including the existing Reset display action.

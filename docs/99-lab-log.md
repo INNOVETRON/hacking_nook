@@ -1102,3 +1102,15 @@ Live verification: all five pages finished at 21:20:54 MDT. The served PNG had
 change / 30 minutes. The checked-in renderer integration also passed failed-render
 retention. Overnight behavior was verified with a controlled midnight fixture,
 not a physical overnight battery measurement. No APK update was required.
+
+### 2026-09-16 — Dashboard display fetch history
+
+- Added persistent successful NookPanel delivery tracking, last fetch, expected next
+  fetch from the actual response timer, daily counts, and today/yesterday events
+  grouped in the configured timezone. Browser previews and failed deliveries do
+  not count. Tracking starts with this deployment; old events are not reconstructed.
+- Moved Display options into Your display and Reset display into that dialog.
+- Deployed server files to nultra (192.168.4.43); backed up originals in
+  `/home/afshin/nook-backups/display-activity-20260916`, restarted only nookpanel.
+- Validation: 61 unit tests pass; live dashboard and options dialog verified.
+  Nook BNRV300 firmware 1.2.2 unchanged; no device reset or APK update performed.

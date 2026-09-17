@@ -384,3 +384,19 @@ Control routes: `POST /api/media` accepts an image body plus URL-encoded
 `GET /api/program/preview.png?program=...&image=...` previews local artwork.
 `POST /api/reminders` upserts or deletes a reminder. All writes retain the existing
 LAN same-origin checks; app settings are validated before atomic config persistence.
+
+### Main-page schedule and repeating reminders
+
+The Program schedule card on the main dashboard is the single place to arrange
+programs. Edit times/programs, add or remove rows, and Save schedule. One row means
+an all-day program. Existing manual configurations appear as an equivalent all-day
+row until saved; existing enabled schedules are retained. Radio selectors and the
+shared Program settings button were removed. Per-program Settings buttons remain.
+Unsaved schedule edits survive background dashboard polling.
+
+Reminders can run once, every day, weekdays, or weekly on the start date's weekday.
+Repeats use the original local wall-clock time, including across DST. Missing
+spring-forward times are skipped and repeated autumn times run once (first fold).
+The dashboard shows the current/next occurrence and near-term wake warning. Editing
+or deleting a reminder changes the whole series. Recurring conflicts are checked
+against existing reminder patterns, including their DST transitions.

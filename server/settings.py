@@ -44,7 +44,7 @@ class Settings:
     def snapshot(self):
         c = self.renderer.config
         seconds, reason = adaptive_refresh.from_png(getattr(self.renderer, "current", lambda: b"")(), dict(c, active_program=program_schedule.active(c)))
-        return {"app_settings": program_options.options(c), "reminders":c.get("reminders",[]), "program_schedule_enabled": c.get('program_schedule_enabled', False),
+        return {"app_settings": program_options.options(c), "reminders":[program_options.reminder_view(r,c["timezone"],time.time()) for r in c.get("reminders",[])], "program_schedule_enabled": c.get('program_schedule_enabled', False),
                 "program_schedule": c.get('program_schedule', {'06:00':'simple-weather','10:00':'clock-calendar','18:00':'weather-cal','22:00':'simple-weather'}),
                 "current_program": program_schedule.selected(c), "refresh_preview": {"seconds": seconds, "reason": reason}, "version": 1, "programs": PROGRAMS, "active_program": c.get("active_program", "weather-cal"),
                 "server_refresh_seconds": c.get("server_refresh_seconds", 1800),
@@ -112,21 +112,24 @@ class Settings:
             ident=data.get('id') or uuid.uuid4().hex
             if data.get('action')=='delete':
                 return self._commit({'reminders':[r for r in records if r['id']!=ident]})
-            if set(data)-{'action','id','title','message','when','minutes','icon'}:
+            if set(data)-{'action','id','title','message','when','minutes','icon','repeat'}:
                 raise ValueError('Unknown reminder field.')
             title=data.get('title','');message=data.get('message','');minutes=data.get('minutes',15);icon=data.get('icon','calendar')
             if not isinstance(title,str) or not title.strip() or len(title)>60 or not isinstance(message,str) or len(message)>180:
                 raise ValueError('Add a title (up to 60 characters) and message (up to 180).')
             if type(minutes) is not int or not 1<=minutes<=1440 or icon not in program_options.ICONS:
                 raise ValueError('Choose a duration of 1–1440 minutes and a valid icon.')
+            repeat=data.get('repeat','none')
+            if repeat not in program_options.REPEATS:
+                raise ValueError('Choose once, daily, weekdays or weekly.')
             at=program_options.reminder_at(data.get('when'),self.renderer.config['timezone'])
-            if at < time.time()-60:
+            if at < time.time()-60 and repeat=='none':
                 raise ValueError('Choose a reminder time in the future.')
             if len(records)>=100 and not any(r['id']==ident for r in records):
                 raise ValueError('Delete an old reminder before adding another (100 maximum).')
-            if any(r['id']!=ident and at < r['at']+r['minutes']*60 and at+minutes*60 > r['at'] for r in records):
+            record=dict(id=ident,title=title.strip(),message=message,minutes=minutes,icon=icon,at=at,when=data['when'],repeat=repeat)
+            if any(r['id']!=ident and program_options.reminders_overlap(record,r,self.renderer.config['timezone']) for r in records):
                 raise ValueError('This reminder overlaps another one. Choose a different time or duration.')
-            record=dict(id=ident,title=title.strip(),message=message,minutes=minutes,icon=icon,at=at,when=data['when'])
             return self._commit({'reminders':[r for r in records if r['id']!=ident]+[record]})
 
     def delete_picture(self, ident):

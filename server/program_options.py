@@ -1,5 +1,5 @@
 """Validated program options and one-shot reminders."""
-from datetime import datetime
+from datetime import datetime, timedelta
 import math
 from zoneinfo import ZoneInfo
 
@@ -64,11 +64,67 @@ def reminder_at(value, timezone):
         raise ValueError('Choose a valid local date/time (not a skipped daylight-saving hour).')
 
 
+REPEATS = {'none', 'daily', 'weekdays', 'weekly'}
+
+
+def occurrences(reminder, timezone, start, end):
+    """Occurrences in an epoch window, repeated at the original local wall time."""
+    if reminder.get('repeat','none') == 'none':
+        return [reminder] if start <= reminder['at'] < end else []
+    zone=ZoneInfo(timezone)
+    first=datetime.fromtimestamp(reminder['at'],zone)
+    day=max(first.date(),datetime.fromtimestamp(start,zone).date())
+    last=datetime.fromtimestamp(end,zone).date()
+    result=[]
+    while day <= last:
+        repeat=reminder['repeat']
+        if repeat=='daily' or repeat=='weekdays' and day.weekday()<5 or repeat=='weekly' and day.weekday()==first.weekday():
+            local=datetime.combine(day,first.time().replace(tzinfo=None)).replace(tzinfo=zone,fold=0)
+            stamp=local.timestamp()
+            # Spring's missing clock time is skipped; autumn's repeated time runs once.
+            if datetime.fromtimestamp(stamp,zone).replace(tzinfo=None)==local.replace(tzinfo=None) and max(start,reminder['at']) <= stamp < end:
+                result.append(dict(reminder,at=stamp))
+        day+=timedelta(days=1)
+    return result
+
+
 def active_reminder(config, now):
-    stamp=now.timestamp()
-    return next((r for r in config.get('reminders',[]) if r['at'] <= stamp < r['at']+r['minutes']*60), None)
+    stamp=now.timestamp();zone=config.get('timezone','America/Edmonton')
+    for reminder in config.get('reminders',[]):
+        for occurrence in occurrences(reminder,zone,stamp-86400,stamp+1):
+            if occurrence['at'] <= stamp < occurrence['at']+occurrence['minutes']*60:
+                return occurrence
+    return None
 
 
 def reminder_boundaries(config, now):
-    stamp=now.timestamp()
-    return [t for r in config.get('reminders',[]) for t in (r['at'],r['at']+r['minutes']*60) if t > stamp]
+    stamp=now.timestamp();zone=config.get('timezone','America/Edmonton')
+    # Eight days finds the next weekly occurrence, including across DST.
+    return [t for r in config.get('reminders',[]) for occurrence in occurrences(r,zone,stamp-86400,stamp+9*86400)
+            for t in (occurrence['at'],occurrence['at']+occurrence['minutes']*60) if t > stamp]
+
+
+def reminder_view(reminder, timezone, now):
+    future=occurrences(reminder,timezone,now-86400,now+9*86400)
+    current=next((r for r in future if r['at'] <= now < r['at']+r['minutes']*60),None)
+    upcoming=next((r for r in future if r['at']>now),None)
+    if reminder.get('repeat','none')=='none' and reminder['at']>now:
+        upcoming=reminder
+    # A recurring series can start more than nine days from now.
+    if upcoming is None and reminder['at']>now:
+        upcoming=next(iter(occurrences(reminder,timezone,reminder['at'],reminder['at']+9*86400)),None)
+    return dict(reminder,repeat=reminder.get('repeat','none'),occurrence_at=(current or upcoming or {}).get('at'),showing=bool(current))
+
+
+def reminders_overlap(left,right,timezone):
+    # Daily/weekly patterns repeat each week; a full year also covers DST changes.
+    start=max(left['at'],right['at'])-86400
+    end=start+370*86400
+    a=occurrences(left,timezone,start,end);b=occurrences(right,timezone,start,end)
+    i=j=0
+    while i<len(a) and j<len(b):
+        if a[i]['at'] < b[j]['at']+b[j]['minutes']*60 and b[j]['at'] < a[i]['at']+a[i]['minutes']*60:
+            return True
+        if a[i]['at']+a[i]['minutes']*60 <= b[j]['at']:i+=1
+        else:j+=1
+    return False

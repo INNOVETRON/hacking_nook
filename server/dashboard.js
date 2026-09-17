@@ -1,5 +1,5 @@
 const $=id=>document.getElementById(id);
-let state, activity, pictures=[], editingKind, editingProgram, busy=false;
+let state, activity, pictures=[], editingKind, editingProgram, busy=false, scheduleDirty=false;
 const defaults={hourly:'06:00',today:'09:30',daily:'17:00',tomorrow:'21:00'};
 const localPrograms=new Set(['clock-calendar','photo-frame','countdown','daylight']);
 const icons={'clock-calendar':'◷','photo-frame':'▧',countdown:'★',daylight:'☀','simple-weather':'☀','weather-cal':'☂'};
@@ -14,19 +14,16 @@ function element(tag,text,className){const node=document.createElement(tag);if(t
 function button(text,action){const node=element('button',text);node.type='button';node.onclick=action;return node}
 function render(){
   const chosen=state.current_program;
-  $('programSummary').textContent=state.program_schedule_enabled?'Scheduled now: '+nameFor(chosen):nameFor(state.active_program)+' selected';
+  $('programSummary').textContent='Scheduled now: '+nameFor(chosen);
   $('serverInterval').textContent=localPrograms.has(chosen)?'Program timing is configured in its settings.':`Server generates weather images every ${state.server_refresh_seconds/60} minutes.`;
   $('interval').textContent=state.refresh_mode==='adaptive'&&chosen==='simple-weather'?`Adaptive ${state.adaptive_refresh.min_seconds/60}–${state.adaptive_refresh.max_seconds/60} min`:localPrograms.has(chosen)?'Program timing':`${state.device_refresh_seconds/60} min`;
   $('wakePreview').textContent=localPrograms.has(chosen)||chosen==='reminder'?'The next fetch follows the program, reminder, and schedule boundaries.':state.refresh_preview?`On next fetch: sleep ${Math.round(state.refresh_preview.seconds/60)} min · ${state.refresh_preview.reason}.`:'';
-  $('displayOpen').disabled=false;$('programOpen').disabled=false;$('notice').textContent='Your server is ready.';
+  $('displayOpen').disabled=false;renderSchedule();$('notice').textContent='Your server is ready.';
   const container=$('programChoices');container.replaceChildren();
   for(const program of state.programs){
     const card=element('div',undefined,'program'),icon=element('span',icons[program.id]||'☀','icon');icon.setAttribute('aria-hidden','true');
     const content=element('div');content.append(element('h3',program.name),element('p',program.description));
-    const radio=element('input');radio.type='radio';radio.name='program';radio.checked=state.active_program===program.id;radio.setAttribute('aria-label','Select '+program.name);
-    radio.disabled=!state.renderer_available&&!localPrograms.has(program.id);
-    radio.onchange=async()=>{busy=true;try{state=await api('/api/settings',{...settingsData(),active_program:program.id,program_schedule_enabled:false});render();$('notice').textContent=program.name+' selected. The Nook updates on its next fetch.'}catch(error){render();$('notice').textContent=error.message}finally{busy=false}};
-    card.append(icon,content,radio,button('Settings',()=>openEditor('program',program.id)));container.append(card);
+    card.append(icon,content,button('Settings',()=>openEditor('program',program.id)));container.append(card);
   }
   renderReminders();
 }
@@ -41,7 +38,6 @@ function openEditor(kind,program=state.active_program){
   editingKind=kind;editingProgram=program;$('error').textContent='';
   $('title').textContent=kind==='display'?'Display options':nameFor(program);
   $('displayFields').hidden=kind!=='display';$('programFields').hidden=kind!=='program'||localPrograms.has(program);$('customProgramFields').hidden=kind!=='program'||!localPrograms.has(program);
-  $('programScheduleEnabled').checked=state.program_schedule_enabled;$('programScheduleRows').replaceChildren();for(const [time,app] of Object.entries(state.program_schedule))addProgramTime(time,app);
   const a=state.adaptive_refresh;$('refreshMode').value=state.refresh_mode;$('minutes').value=state.device_refresh_seconds/60;$('adaptiveMin').value=a.min_seconds/60;$('adaptiveMax').value=a.max_seconds/60;$('quietEnabled').checked=a.quiet_enabled;$('quietStart').value=a.quiet_start;$('quietEnd').value=a.quiet_end;
   $('serverMinutes').value=state.server_refresh_seconds/60;$('temperatureDelta').value=a.temperature_delta_c;$('precipitationPercent').value=a.precipitation_percent;$('windDelta').value=a.wind_delta_kmh;
   $('weatherThresholds').hidden=program!=='simple-weather';$('scheduleFields').hidden=program!=='weather-cal';$('advisories').checked=state.advisories;$('zone').textContent='Timezone: '+state.timezone;$('schedule').replaceChildren();
@@ -73,14 +69,14 @@ function renderLibrary(root,program){
   root.append(upload,status,gallery);fillGallery();
 }
 function syncImageOptions(root){const select=root.querySelector('[data-option="image"]');if(!select)return;const selected=select.value;select.replaceChildren();for(const [id,name] of [['','Use the icon'],...pictures.map(p=>[p.id,p.name])]){const option=element('option',name);option.value=id;select.append(option)}select.value=pictures.some(p=>p.id===selected)?selected:''}
-$('displayOpen').onclick=()=>openEditor('display');$('programOpen').onclick=()=>openEditor('program');$('close').onclick=$('cancel').onclick=()=>$('editor').close();
+$('displayOpen').onclick=()=>openEditor('display');$('close').onclick=$('cancel').onclick=()=>$('editor').close();
 $('form').onsubmit=async event=>{
   event.preventDefault();$('error').textContent='';const data=settingsData();
   try{
     if(editingKind==='display'){
       data.device_refresh_seconds=Math.round(Number($('minutes').value)*60);data.refresh_mode=$('refreshMode').value;
       Object.assign(data.adaptive_refresh,{min_seconds:Number($('adaptiveMin').value)*60,max_seconds:Number($('adaptiveMax').value)*60,quiet_enabled:$('quietEnabled').checked,quiet_start:$('quietStart').value,quiet_end:$('quietEnd').value});
-      data.program_schedule_enabled=$('programScheduleEnabled').checked;data.program_schedule={};for(const row of $('programScheduleRows').children){const time=row.querySelector('input').value;if(!time||data.program_schedule[time])throw Error('Give each scheduled program a different start time.');data.program_schedule[time]=row.querySelector('select').value}
+
     }else if(localPrograms.has(editingProgram)){
       for(const input of $('customProgramFields').querySelectorAll('[data-option]'))data.app_settings[editingProgram][input.dataset.option]=input.type==='checkbox'?input.checked:input.type==='number'?Number(input.value):input.value;
     }else{
@@ -91,23 +87,40 @@ $('form').onsubmit=async event=>{
     $('save').disabled=true;busy=true;state=await api('/api/settings',data);render();$('editor').close();$('notice').textContent='Saved. Your Nook receives the changes on its next fetch.';
   }catch(error){$('error').textContent=error.message}finally{$('save').disabled=false;busy=false}
 };
-function addProgramTime(time='12:00',program='simple-weather'){const row=element('div',undefined,'row');row.style.marginTop='12px';const input=element('input');input.type='time';input.value=time;input.setAttribute('aria-label','Program start time');const select=element('select');select.setAttribute('aria-label','Scheduled program');for(const p of state.programs){const option=element('option',p.name);option.value=p.id;select.append(option)}select.value=program;row.append(input,select,button('Remove',()=>row.remove()));$('programScheduleRows').append(row)}
-$('addProgramTime').onclick=()=>{if($('programScheduleRows').children.length<12)addProgramTime()};
+function addProgramTime(time='12:00',program='simple-weather'){const row=element('div',undefined,'row');row.style.marginTop='12px';const input=element('input');input.type='time';input.value=time;input.setAttribute('aria-label','Program start time');const select=element('select');select.setAttribute('aria-label','Scheduled program');for(const p of state.programs){const option=element('option',p.name);option.value=p.id;select.append(option)}select.value=program;row.append(input,select,button('Remove',()=>{row.remove();scheduleDirty=true}));$('programScheduleRows').append(row)}
+function renderSchedule(){
+  $('scheduleNow').textContent='Now: '+nameFor(state.current_program)+' · '+state.timezone;
+  if(scheduleDirty)return;
+  $('programScheduleRows').replaceChildren();
+  const schedule=state.program_schedule_enabled?state.program_schedule:{'00:00':state.active_program};
+  for(const [time,program] of Object.entries(schedule).sort())addProgramTime(time,program);
+}
+$('programScheduleRows').oninput=$('programScheduleRows').onchange=()=>{scheduleDirty=true;$('scheduleStatus').textContent='Unsaved schedule changes'};
+$('addProgramTime').onclick=()=>{if($('programScheduleRows').children.length<12){addProgramTime();scheduleDirty=true}};
+$('saveProgramSchedule').onclick=async()=>{
+  const schedule={};$('scheduleStatus').textContent='';
+  try{
+    for(const row of $('programScheduleRows').children){const time=row.querySelector('input').value;if(!time||schedule[time])throw Error('Give every row a different start time.');schedule[time]=row.querySelector('select').value}
+    if(!Object.keys(schedule).length)throw Error('Add at least one program.');
+    busy=true;$('saveProgramSchedule').disabled=true;
+    state=await api('/api/settings',{...settingsData(),program_schedule_enabled:true,program_schedule:schedule});scheduleDirty=false;render();$('scheduleStatus').textContent='Schedule saved. The Nook receives the new timing on its next fetch.';
+  }catch(error){$('scheduleStatus').textContent=error.message}finally{busy=false;$('saveProgramSchedule').disabled=false}
+};
 $('resetDisplay').onclick=async()=>{const button=$('resetDisplay');button.disabled=true;$('resetStatus').textContent='Connecting to the Nook…';try{$('resetStatus').textContent=(await api('/api/display/reset',{})).message}catch(error){$('resetStatus').textContent=error.message}finally{button.disabled=false}};
 function openReminder(record={}){
-  $('reminderId').value=record.id||'';$('reminderName').value=record.title||'';$('reminderMessage').value=record.message||'';$('reminderWhen').value=record.when||'';$('reminderMinutes').value=record.minutes||15;$('reminderIcon').value=record.icon||'calendar';$('reminderError').textContent='';$('reminderTitle').textContent=record.id?'Edit reminder':'Add reminder';$('reminderZone').textContent='Timezone: '+state.timezone+'. Repeated daylight-saving times use the first occurrence.';$('reminderEditor').showModal();
+  $('reminderId').value=record.id||'';$('reminderName').value=record.title||'';$('reminderMessage').value=record.message||'';$('reminderWhen').value=record.when||'';$('reminderMinutes').value=record.minutes||15;$('reminderIcon').value=record.icon||'calendar';$('reminderRepeat').value=record.repeat||'none';$('reminderError').textContent='';$('reminderTitle').textContent=record.id?'Edit reminder':'Add reminder';$('reminderZone').textContent='Timezone: '+state.timezone+'. Repeats keep this local time. Missing daylight-saving times are skipped; repeated times run once.';$('reminderEditor').showModal();
 }
 function renderReminders(){
-  const root=$('reminderList');root.replaceChildren();for(const reminder of [...state.reminders].sort((a,b)=>a.at-b.at)){
+  const root=$('reminderList');root.replaceChildren();for(const reminder of [...state.reminders].sort((a,b)=>(a.occurrence_at??Infinity)-(b.occurrence_at??Infinity))){
     const row=element('div',undefined,'reminder-item'),now=Date.now()/1000,end=reminder.at+reminder.minutes*60;
-    row.append(element('strong',reminder.title),element('p',`${timeAt(reminder.at)} · ${reminder.minutes} minutes · ${now>=end?'Finished':now>=reminder.at?'Showing now':'Upcoming'}`,'muted'),element('p',reminder.message));
+    row.append(element('strong',reminder.title),element('p',`${reminder.occurrence_at?timeAt(reminder.occurrence_at):timeAt(reminder.at)} · ${reminder.minutes} minutes · ${{none:'Once',daily:'Daily',weekdays:'Weekdays',weekly:'Weekly'}[reminder.repeat||'none']} · ${reminder.showing?'Showing now':reminder.occurrence_at?'Upcoming':'Finished'}`,'muted'),element('p',reminder.message));
     row.append(button('Edit',()=>openReminder(reminder)),button('Delete',async()=>{try{state=await api('/api/reminders',{action:'delete',id:reminder.id});renderReminders()}catch(error){$('notice').textContent=error.message}}));root.append(row);
   }if(!state.reminders.length)root.append(element('p','No reminders yet.','muted'));
-  const next=activity?.next_fetch,early=next&&state.reminders.some(r=>r.at>Date.now()/1000&&r.at<next);
+  const next=activity?.next_fetch,early=next&&state.reminders.some(r=>r.occurrence_at>Date.now()/1000&&r.occurrence_at<next);
   $('reminderTiming').textContent=early?`A reminder starts before the Nook’s next expected fetch (${timeAt(next)}). Wake the Nook so it can receive the new timer; otherwise that reminder may be late or missed.`:next?`Next expected connection: ${timeAt(next)}. Add reminders before this connection, or wake the Nook to receive a new timer.`:'The Nook learns about reminders on its next fetch. Wake it after adding a near-term reminder.';
 }
 $('addReminder').onclick=()=>openReminder();$('reminderClose').onclick=$('reminderCancel').onclick=()=>$('reminderEditor').close();
-$('reminderForm').onsubmit=async event=>{event.preventDefault();$('reminderSave').disabled=true;busy=true;try{state=await api('/api/reminders',{action:'upsert',id:$('reminderId').value,title:$('reminderName').value,message:$('reminderMessage').value,when:$('reminderWhen').value,minutes:Number($('reminderMinutes').value),icon:$('reminderIcon').value});renderReminders();$('reminderEditor').close()}catch(error){$('reminderError').textContent=error.message}finally{$('reminderSave').disabled=false;busy=false}};
+$('reminderForm').onsubmit=async event=>{event.preventDefault();$('reminderSave').disabled=true;busy=true;try{state=await api('/api/reminders',{action:'upsert',id:$('reminderId').value,title:$('reminderName').value,message:$('reminderMessage').value,when:$('reminderWhen').value,minutes:Number($('reminderMinutes').value),icon:$('reminderIcon').value,repeat:$('reminderRepeat').value});renderReminders();$('reminderEditor').close()}catch(error){$('reminderError').textContent=error.message}finally{$('reminderSave').disabled=false;busy=false}};
 async function refreshActivity(){
   try{
     activity=await api('/api/display/status');if(!state)return;

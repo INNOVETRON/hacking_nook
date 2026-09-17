@@ -1152,3 +1152,16 @@ not a physical overnight battery measurement. No APK update was required.
   persistence. Inspected all 600x800 program artwork and live dashboard controls.
 - Timing limitation is visible in the dashboard: a sleeping Nook must fetch once
   to learn a new reminder; a reminder inserted before its next fetch may be missed.
+
+### 2026-09-16 — Main-page schedule and repeat reminders
+
+- Moved program scheduling from Display options into a main-page card with direct
+  row editing and Save schedule. Removed radio selectors and shared Program settings;
+  each program retains its own Settings button. Preserved existing program timing.
+- Added once/daily/weekdays/weekly reminders, local-time recurrence, next-occurrence
+  display, overlap checks and correct occurrence-end wake timers. Missing DST times
+  skip; repeated times run once. Reminder series can be edited/deleted normally.
+- Deployed to nultra, backing up originals under
+  /home/afshin/nook-backups/schedule-repeat-20260916. No Nook APK changes.
+- Validation: 81 tests pass, including DST, weekday/weekly recurrence, cross-midnight
+  activity, conflicts, and legacy one-shot reminders; dashboard JavaScript checks pass.

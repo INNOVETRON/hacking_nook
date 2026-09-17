@@ -2,8 +2,9 @@
 from datetime import datetime, timedelta
 from zoneinfo import ZoneInfo
 import re
+import program_options
 
-PROGRAMS = {'simple-weather', 'weather-cal', 'clock-calendar'}
+PROGRAMS = {'simple-weather', 'weather-cal', 'clock-calendar', 'photo-frame', 'countdown', 'daylight'}
 
 
 def validate(config):
@@ -31,9 +32,9 @@ def active(config, now=None):
 
 def next_boundary(config, now=None):
     now = now or datetime.now(ZoneInfo(config.get('timezone', 'America/Edmonton')))
+    candidates = program_options.reminder_boundaries(config,now)
     if not config.get('program_schedule_enabled'):
-        return None
-    candidates = []
+        return min(candidates) if candidates else None
     for offset in (0, 1):
         for value in config.get('program_schedule', {}):
             hour, minute = map(int, value.split(':'))
@@ -45,3 +46,8 @@ def next_boundary(config, now=None):
                 if roundtrip.hour == hour and roundtrip.minute == minute and stamp.timestamp() > now.timestamp():
                     candidates.append(stamp.timestamp())
     return min(candidates) if candidates else None
+
+
+def selected(config, now=None):
+    now=now or datetime.now(ZoneInfo(config.get('timezone','America/Edmonton')))
+    return 'reminder' if program_options.active_reminder(config,now) else active(config,now)

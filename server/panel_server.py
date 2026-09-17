@@ -51,6 +51,9 @@ import adaptive_refresh
 from display_activity import DisplayActivity
 import program_schedule
 import display_preview
+import math
+import local_programs
+from media_library import MediaLibrary
 from email.utils import parsedate_to_datetime
 
 LOG = logging.getLogger("nookpanel")
@@ -87,6 +90,8 @@ class RenderedPages:
     """
 
     def __init__(self, config, cache_dir):
+        self.library = MediaLibrary(Path(cache_dir).parent / "media")
+        self.programs = local_programs.ProgramRenderer(self.library, cache_dir)
         self.settings_changed = threading.Event()
         self.config = config
         self.base = (config.get("renderer_url")
@@ -118,7 +123,7 @@ class RenderedPages:
             LOG.exception("could not read cached renderer image")
         self.refresh()
 
-    def _target(self):
+    def _target(self, fetch_weather=True):
         """(url, page, reason) for this refresh."""
         if not self.base:
             return self.config["mirror_url"], None, None    # old fixed-URL form
@@ -128,22 +133,22 @@ class RenderedPages:
 
         now = datetime.now(ZoneInfo(self.config["timezone"]))
         try:
-            self.weather.fetch()
+            if fetch_weather:
+                self.weather.fetch()
         except Exception as exc:
             LOG.warning("weather fetch failed; choosing by the clock alone: %s", exc)
 
         page, reason = pagechoice.choose(self.config, self.weather, now)
         return f"{self.base}/{page}.png", page, reason
 
-    def refresh(self):
-        if self.base and program_schedule.active(self.config) == 'clock-calendar':
-            with self.lock:
-                self.png = display_preview.clock_image(datetime.now(ZoneInfo(self.config['timezone'])))
-                self.page = 'clock-calendar'
-                self.fetched_at = time.time()
+    def refresh(self, for_fetch=False):
+        selected = program_schedule.selected(self.config)
+        if selected in local_programs.LOCAL:
+            if selected == 'daylight':
+                self.programs.refresh_daylight(self.config,datetime.now(ZoneInfo(self.config['timezone'])))
             self.retrying = False
             return
-        url, page, reason = self._target()
+        url, page, reason = self._target(fetch_weather=not for_fetch)
         if page and page != self.page:
             LOG.info("showing %s%s", page, f" - {reason}" if reason else "")
         elif reason and page == self.page:
@@ -152,7 +157,7 @@ class RenderedPages:
         request = urllib.request.Request(
             url, headers={"User-Agent": "NookPanel-mirror/0.1"})
         try:
-            with urllib.request.urlopen(request, timeout=30) as response:
+            with urllib.request.urlopen(request, timeout=3 if for_fetch else 30) as response:
                 body = response.read()
                 modified = getattr(response, 'headers', {}).get('Last-Modified')
                 try:
@@ -219,6 +224,19 @@ class RenderedPages:
         seconds = int(time.time() - self.fetched_at)
         return f"{seconds // 60}m{seconds % 60:02d}s"
 
+    def for_fetch(self):
+        now = datetime.now(ZoneInfo(self.config.get('timezone','America/Edmonton')))
+        selected = program_schedule.selected(self.config,now)
+        if selected in local_programs.LOCAL:
+            return self.programs.render(selected,self.config,now)
+        if self.base:
+            desired = 'simple-weather' if selected == 'simple-weather' else pagechoice.choose(self.config,self.weather,now)[0]
+            if self.page != desired:
+                # A reminder/schedule may finish between background refreshes.
+                # Use the already-rendered local image without a weather API call.
+                self.refresh(for_fetch=True)
+        return self.current()
+
     def current(self):
         with self.lock:
             return self.png
@@ -243,6 +261,8 @@ class Renderer:
     """Owns the current PNG and refreshes it on a timer in the background."""
 
     def __init__(self, config, cache_dir):
+        self.library = MediaLibrary(Path(cache_dir).parent / "media")
+        self.programs = local_programs.ProgramRenderer(self.library, cache_dir)
         self.settings_changed = threading.Event()
         self.config = config
         self.cache_dir = cache_dir
@@ -252,6 +272,11 @@ class Renderer:
         self.refresh()
 
     def refresh(self):
+        selected = program_schedule.selected(self.config)
+        if selected in local_programs.LOCAL:
+            if selected == 'daylight':
+                self.programs.refresh_daylight(self.config,datetime.now(ZoneInfo(self.config['timezone'])))
+            return
         try:
             self.weather.fetch()
         except Exception as exc:                       # network flakiness is normal
@@ -266,6 +291,13 @@ class Renderer:
             self.png = buffer.getvalue()
         LOG.info("rendered %s layout, %d bytes",
                  self.config.get("layout", "today"), len(self.png))
+
+    def for_fetch(self):
+        now = datetime.now(ZoneInfo(self.config.get('timezone','America/Edmonton')))
+        selected = program_schedule.selected(self.config,now)
+        if selected in local_programs.LOCAL:
+            return self.programs.render(selected,self.config,now)
+        return self.current()
 
     def current(self):
         with self.lock:
@@ -305,7 +337,7 @@ def make_handler(renderer):
         def do_GET(self):
             path = urllib.parse.urlparse(self.path).path
             if path in ("/panel.png", "/panel"):
-                body = renderer.current()
+                body = renderer.for_fetch() if hasattr(type(renderer), "for_fetch") else renderer.current()
                 is_nook = getattr(self, 'headers', {}).get("User-Agent", "").startswith("NookPanel/")
                 if not body:
                     if is_nook:
@@ -317,11 +349,14 @@ def make_handler(renderer):
                     self.send_header("Cache-Control", "no-store")
                     self.end_headers()
                     return
-                effective = dict(renderer.config, active_program=program_schedule.active(renderer.config))
+                effective = dict(renderer.config, active_program=program_schedule.selected(renderer.config))
                 seconds, reason = adaptive_refresh.from_png(body, effective)
+                metadata = display_preview.metadata(body)
+                if metadata.get('next_update'):
+                    seconds, reason = max(60,min(86400,math.ceil(metadata['next_update']-time.time()))), 'Program update'
                 boundary = program_schedule.next_boundary(renderer.config)
                 if boundary and boundary-time.time() < seconds:
-                    seconds, reason = max(60, int(boundary-time.time())), 'Scheduled program change'
+                    seconds, reason = max(60, math.ceil(boundary-time.time())), 'Scheduled program change'
                 actual = display_preview.metadata(body).get('program')
                 if actual and actual != effective['active_program']:
                     seconds, reason = min(seconds, 900), 'Waiting for selected image'
@@ -339,7 +374,9 @@ def make_handler(renderer):
                         renderer.activity.failed("Connection interrupted during image transfer")
                     return
                 if is_nook:
-                    renderer.activity.record(seconds, reason, headers=self.headers)
+                    renderer.activity.record(seconds, reason, headers=self.headers, body=body)
+                    if hasattr(renderer, "programs"):
+                        renderer.programs.delivered(body,time.time())
             elif path == "/healthz":
                 self._text("ok")
             elif path == "/":

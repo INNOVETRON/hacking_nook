@@ -1133,3 +1133,22 @@ not a physical overnight battery measurement. No APK update was required.
   Simple Weather selection and sleep settings retained; schedule is opt-in.
 - Validation: 66 tests passed and real weather-cal integration verified atomic
   overnight PNG metadata and six-hour sleep. No firmware flash or device reset.
+
+### 2026-09-16 — Photo frame, countdown, daylight, reminders and exact preview
+
+- Added Photo / Art Frame with normalized uploads and delivery-driven rotation;
+  Countdown with icons/photos and configurable appearance; Seasonal Daylight with
+  dated Open-Meteo solar data; and one-shot reminder overrides with overlap checks.
+- Added actual Clock & Calendar settings and per-program configuration buttons.
+  Moved preview/report above Programs. The preview stores the exact delivered PNG,
+  independently of newly generated artwork and settings previews.
+- Deployed to nultra, with originals backed up in
+  /home/afshin/nook-backups/program-library-20260916. No new APK was needed; the
+  existing BNRV300 / firmware 1.2.2 refresh-header protocol remains unchanged.
+- User woke the Nook; live delivery and preview both had SHA-256
+  f46a7f77522a0762c8769cf82e914bc8b16f34e746eb682650f6032456f90172.
+- Validation: 76 tests including real local HTTP upload/preview/delete and exact
+  bytes, reminder transitions, no slideshow advancement by preview, and restart
+  persistence. Inspected all 600x800 program artwork and live dashboard controls.
+- Timing limitation is visible in the dashboard: a sleeping Nook must fetch once
+  to learn a new reminder; a reminder inserted before its next fetch may be missed.

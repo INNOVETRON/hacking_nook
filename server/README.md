@@ -321,7 +321,7 @@ now live inside Your display, including the existing Reset display action.
 
 ### Display suite
 
-- `/api/display/preview.png` serves the exact cached image without recording a
+- `/api/display/preview.png` serves the last delivered image without recording a
   device fetch; status includes image generation time where available.
 - NookPanel 0.3 sends battery percentage, plugged-in state, and a persistent total
   of failed fetch attempts on its normal request. No extra wake-ups are introduced.
@@ -342,3 +342,45 @@ now live inside Your display, including the existing Reset display action.
   hours its distinct morning briefing shows the first morning forecast reading,
   sunrise, four morning hours, and next wake time. It does not label a nighttime
   observation as the morning forecast.
+
+### Programs, pictures and reminders
+
+The dashboard now puts the preview/report first. Its main preview is the exact
+PNG from the most recent successful Nook delivery, persisted by SHA-256 in the
+activity cache. It remains unchanged when a program is selected, settings are
+saved, or a newer image is generated. Separate previews in program settings show
+candidate artwork and do not count as Nook fetches or advance a slideshow.
+
+Each program has a Settings button independent of the active selection:
+
+- **Clock & Calendar:** heading, 12/24-hour format, Monday/Sunday week start,
+  and its own update interval.
+- **Photo / Art Frame:** JPEG/PNG/WebP uploads, framed previews, deletion, picture
+  duration, contain/crop fitting, border, captions and optional monochrome dithering.
+  Pictures rotate in upload order. Rotation advances on actual deliveries;
+  resuming the program gives its retained picture a full interval. User uploads
+  live in ignored `server/media/` (100 pictures, 12 MB/24 MP per upload), are
+  orientation-corrected and normalized to PNG, and never use supplied filenames
+  as filesystem paths. Back up this directory with the server config.
+- **Countdown:** date, title, subtitle, icon or library picture, light/dark theme,
+  date-day message and update interval. After the event it shows days since.
+- **Seasonal Daylight:** heading, time format and update interval, using the server
+  location/timezone. The sunrise/sunset/duration data is cached from
+  [Open-Meteo](https://open-meteo.com/en/docs), including yesterday for comparison.
+  Stale data for a different date/location is not displayed as today's daylight.
+
+Reminders are separate from selectable programs. Add/edit/delete them with a local
+start date/time, title, message, icon and duration. Overlaps and nonexistent DST
+clock times are rejected; repeated DST times use the first occurrence. Known start
+and end boundaries cap device sleep, overriding quiet hours when needed. On expiry,
+selection returns to whichever program the current schedule calls for, or the
+manual selection. Deleted/edited reminders reach a sleeping Nook at its next fetch.
+A new reminder before that next connection can be late or missed; the dashboard
+shows this explicitly and suggests waking the Nook. The existing device protocol
+has a 60-second minimum sleep, so boundary timing is approximate within a minute.
+
+Control routes: `POST /api/media` accepts an image body plus URL-encoded
+`X-File-Name`; `GET /api/media` lists images; `POST /api/media/delete` removes an ID.
+`GET /api/program/preview.png?program=...&image=...` previews local artwork.
+`POST /api/reminders` upserts or deletes a reminder. All writes retain the existing
+LAN same-origin checks; app settings are validated before atomic config persistence.

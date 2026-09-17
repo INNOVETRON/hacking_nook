@@ -46,3 +46,6 @@ upstream/run/
 # Machine-local agent integrations
 /.codex/
 /.mcp.json
+
+# User-uploaded photo/art library
+server/media/

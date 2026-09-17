@@ -1,0 +1,130 @@
+const $=id=>document.getElementById(id);
+let state, activity, pictures=[], editingKind, editingProgram, busy=false;
+const defaults={hourly:'06:00',today:'09:30',daily:'17:00',tomorrow:'21:00'};
+const localPrograms=new Set(['clock-calendar','photo-frame','countdown','daylight']);
+const icons={'clock-calendar':'◷','photo-frame':'▧',countdown:'★',daylight:'☀','simple-weather':'☀','weather-cal':'☂'};
+async function api(path, data, method='POST'){
+  const response=await fetch(path,data===undefined?{}:{method,headers:{'Content-Type':'application/json'},body:JSON.stringify(data)});
+  const result=await response.json();if(!response.ok)throw Error(result.error||'Request failed');return result;
+}
+function nameFor(id){return state.programs.find(p=>p.id===id)?.name||'Reminder'}
+function settingsData(){const keys=['program_schedule_enabled','program_schedule','refresh_mode','adaptive_refresh','active_program','server_refresh_seconds','device_refresh_seconds','enabled_pages','page_schedule','advisories','app_settings'];return Object.fromEntries(keys.map(key=>[key,structuredClone(state[key])]))}
+function timeAt(epoch,date=true){return new Intl.DateTimeFormat(undefined,{timeZone:state.timezone,...(date?{month:'short',day:'numeric'}:{}),hour:'numeric',minute:'2-digit',second:'2-digit'}).format(new Date(epoch*1000))}
+function element(tag,text,className){const node=document.createElement(tag);if(text!==undefined)node.textContent=text;if(className)node.className=className;return node}
+function button(text,action){const node=element('button',text);node.type='button';node.onclick=action;return node}
+function render(){
+  const chosen=state.current_program;
+  $('programSummary').textContent=state.program_schedule_enabled?'Scheduled now: '+nameFor(chosen):nameFor(state.active_program)+' selected';
+  $('serverInterval').textContent=localPrograms.has(chosen)?'Program timing is configured in its settings.':`Server generates weather images every ${state.server_refresh_seconds/60} minutes.`;
+  $('interval').textContent=state.refresh_mode==='adaptive'&&chosen==='simple-weather'?`Adaptive ${state.adaptive_refresh.min_seconds/60}–${state.adaptive_refresh.max_seconds/60} min`:localPrograms.has(chosen)?'Program timing':`${state.device_refresh_seconds/60} min`;
+  $('wakePreview').textContent=localPrograms.has(chosen)||chosen==='reminder'?'The next fetch follows the program, reminder, and schedule boundaries.':state.refresh_preview?`On next fetch: sleep ${Math.round(state.refresh_preview.seconds/60)} min · ${state.refresh_preview.reason}.`:'';
+  $('displayOpen').disabled=false;$('programOpen').disabled=false;$('notice').textContent='Your server is ready.';
+  const container=$('programChoices');container.replaceChildren();
+  for(const program of state.programs){
+    const card=element('div',undefined,'program'),icon=element('span',icons[program.id]||'☀','icon');icon.setAttribute('aria-hidden','true');
+    const content=element('div');content.append(element('h3',program.name),element('p',program.description));
+    const radio=element('input');radio.type='radio';radio.name='program';radio.checked=state.active_program===program.id;radio.setAttribute('aria-label','Select '+program.name);
+    radio.disabled=!state.renderer_available&&!localPrograms.has(program.id);
+    radio.onchange=async()=>{busy=true;try{state=await api('/api/settings',{...settingsData(),active_program:program.id,program_schedule_enabled:false});render();$('notice').textContent=program.name+' selected. The Nook updates on its next fetch.'}catch(error){render();$('notice').textContent=error.message}finally{busy=false}};
+    card.append(icon,content,radio,button('Settings',()=>openEditor('program',program.id)));container.append(card);
+  }
+  renderReminders();
+}
+function field(root,key,labelText,value,type='text',choices=null){
+  const wrapper=element('p'),label=element('label',labelText+' ');let input;
+  if(choices){input=element('select');for(const [val,text] of choices){const option=element('option',text);option.value=val;input.append(option)}}
+  else{input=element('input');input.type=type;if(type==='number'){input.min='1';input.max='1440';input.step='1'}if(type==='text')input.maxLength=key==='subtitle'?100:60}
+  input.dataset.option=key;if(type==='checkbox')input.checked=value;else input.value=value;
+  label.append(input);wrapper.append(label);root.append(wrapper);return input;
+}
+function openEditor(kind,program=state.active_program){
+  editingKind=kind;editingProgram=program;$('error').textContent='';
+  $('title').textContent=kind==='display'?'Display options':nameFor(program);
+  $('displayFields').hidden=kind!=='display';$('programFields').hidden=kind!=='program'||localPrograms.has(program);$('customProgramFields').hidden=kind!=='program'||!localPrograms.has(program);
+  $('programScheduleEnabled').checked=state.program_schedule_enabled;$('programScheduleRows').replaceChildren();for(const [time,app] of Object.entries(state.program_schedule))addProgramTime(time,app);
+  const a=state.adaptive_refresh;$('refreshMode').value=state.refresh_mode;$('minutes').value=state.device_refresh_seconds/60;$('adaptiveMin').value=a.min_seconds/60;$('adaptiveMax').value=a.max_seconds/60;$('quietEnabled').checked=a.quiet_enabled;$('quietStart').value=a.quiet_start;$('quietEnd').value=a.quiet_end;
+  $('serverMinutes').value=state.server_refresh_seconds/60;$('temperatureDelta').value=a.temperature_delta_c;$('precipitationPercent').value=a.precipitation_percent;$('windDelta').value=a.wind_delta_kmh;
+  $('weatherThresholds').hidden=program!=='simple-weather';$('scheduleFields').hidden=program!=='weather-cal';$('advisories').checked=state.advisories;$('zone').textContent='Timezone: '+state.timezone;$('schedule').replaceChildren();
+  for(const page of state.programs.find(p=>p.id==='weather-cal').pages){const row=element('div',undefined,'row'),label=element('label'),check=element('input'),time=element('input');check.type='checkbox';check.checked=state.enabled_pages.includes(page);check.dataset.page=page;label.append(check,document.createTextNode(page));time.type='time';time.value=Object.keys(state.page_schedule).find(t=>state.page_schedule[t]===page)||defaults[page];time.setAttribute('aria-label',page+' start time');time.disabled=!check.checked;check.onchange=()=>time.disabled=!check.checked;row.append(label,time);$('schedule').append(row)}
+  if(kind==='program'&&localPrograms.has(program))renderCustomFields(program);
+  $('editor').showModal();
+}
+const iconChoices=[['star','Star'],['heart','Heart'],['plane','Travel'],['gift','Gift'],['calendar','Calendar']];
+function renderCustomFields(program){
+  const root=$('customProgramFields');root.replaceChildren();const o=state.app_settings[program];
+  if(program==='clock-calendar'){
+    field(root,'title','Heading',o.title);field(root,'format','Time format',o.format,'text',[['12','12 hour'],['24','24 hour']]);field(root,'week_start','Week begins',o.week_start,'text',[['monday','Monday'],['sunday','Sunday']]);field(root,'refresh_minutes','Update every (minutes)',o.refresh_minutes,'number');root.append(element('p','The clock shows the time at the last fetch. Shorter intervals use more battery.','muted'));
+  }else if(program==='photo-frame'){
+    field(root,'minutes','Show each picture for (minutes)',o.minutes,'number');field(root,'fit','Picture fit',o.fit,'text',[['contain','Fit entire picture'],['cover','Fill frame (crop edges)']]);const border=field(root,'border','Frame border (pixels)',o.border,'number');border.min=0;border.max=60;field(root,'caption','Show picture name',o.caption,'checkbox');field(root,'dither','Use black-and-white dithering',o.dither,'checkbox');root.append(element('p','Pictures rotate in upload order. Each gets its full display time; opening previews never advances the slideshow.','muted'));
+  }else if(program==='countdown'){
+    field(root,'title','Event title',o.title);field(root,'date','Event date',o.date,'date');field(root,'icon','Icon',o.icon,'text',iconChoices);field(root,'image','Picture instead of icon',o.image,'text',[['','Use the icon'],...pictures.map(p=>[p.id,p.name])]);field(root,'subtitle','Subtitle',o.subtitle);field(root,'complete','Message on the day',o.complete);field(root,'theme','Appearance',o.theme,'text',[['light','White background'],['dark','Black background']]);field(root,'refresh_minutes','Update every (minutes)',o.refresh_minutes,'number');root.append(element('p','After the date, the display counts days since the event.','muted'));
+  }else if(program==='daylight'){
+    field(root,'title','Heading',o.title);field(root,'format','Time format',o.format,'text',[['12','12 hour'],['24','24 hour']]);field(root,'refresh_minutes','Update every (minutes)',o.refresh_minutes,'number');root.append(element('p','Uses your server location and timezone: '+state.timezone+'. Sunrise, sunset and daylight duration come from Open-Meteo.','muted'));
+  }
+  if(program==='photo-frame'||program==='countdown')renderLibrary(root,program);
+  const preview=element('img',undefined,'frame-preview');preview.alt='Program artwork with saved settings';preview.id='programArtwork';preview.src='/api/program/preview.png?program='+program+'&t='+Date.now();root.append(preview,element('p','Artwork preview uses saved settings. This does not change the last-fetched preview above.','muted'));
+}
+function renderLibrary(root,program){
+  root.append(element('h3','Your pictures'));
+  const upload=element('input');upload.type='file';upload.accept='image/jpeg,image/png,image/webp';upload.multiple=true;upload.setAttribute('aria-label','Upload pictures');const status=element('p','JPEG, PNG or WebP · up to 12 MB and 24 megapixels each.','muted');
+  const gallery=element('div',undefined,'gallery');
+  const fillGallery=()=>{gallery.replaceChildren();for(const picture of pictures){const tile=element('div'),img=element('img');img.src='/api/media/'+picture.id;img.alt=picture.name;const preview=button('View in frame',()=>{$('programArtwork').src='/api/program/preview.png?program=photo-frame&image='+picture.id+'&t='+Date.now()});const remove=button('Delete',async()=>{remove.disabled=true;try{const result=await api('/api/media/delete',{id:picture.id});pictures=result.pictures;state=result.settings;fillGallery();syncImageOptions(root);if($('programArtwork'))$('programArtwork').src='/api/program/preview.png?program='+program+'&t='+Date.now()}catch(error){status.textContent=error.message}finally{remove.disabled=false}});tile.append(img,element('p',picture.name),preview,remove);gallery.append(tile)}};
+  upload.onchange=async()=>{upload.disabled=true;try{for(const file of upload.files){if(file.size>12*1024*1024)throw Error(file.name+' is larger than 12 MB');const response=await fetch('/api/media',{method:'POST',headers:{'Content-Type':file.type,'X-File-Name':encodeURIComponent(file.name)},body:file});const data=await response.json();if(!response.ok)throw Error(data.error);pictures=data.pictures;fillGallery();syncImageOptions(root)}status.textContent='Uploaded. Choose a picture or preview it in the frame.';if($('programArtwork'))$('programArtwork').src='/api/program/preview.png?program='+program+'&t='+Date.now()}catch(error){status.textContent=error.message}finally{upload.disabled=false;upload.value=''}};
+  root.append(upload,status,gallery);fillGallery();
+}
+function syncImageOptions(root){const select=root.querySelector('[data-option="image"]');if(!select)return;const selected=select.value;select.replaceChildren();for(const [id,name] of [['','Use the icon'],...pictures.map(p=>[p.id,p.name])]){const option=element('option',name);option.value=id;select.append(option)}select.value=pictures.some(p=>p.id===selected)?selected:''}
+$('displayOpen').onclick=()=>openEditor('display');$('programOpen').onclick=()=>openEditor('program');$('close').onclick=$('cancel').onclick=()=>$('editor').close();
+$('form').onsubmit=async event=>{
+  event.preventDefault();$('error').textContent='';const data=settingsData();
+  try{
+    if(editingKind==='display'){
+      data.device_refresh_seconds=Math.round(Number($('minutes').value)*60);data.refresh_mode=$('refreshMode').value;
+      Object.assign(data.adaptive_refresh,{min_seconds:Number($('adaptiveMin').value)*60,max_seconds:Number($('adaptiveMax').value)*60,quiet_enabled:$('quietEnabled').checked,quiet_start:$('quietStart').value,quiet_end:$('quietEnd').value});
+      data.program_schedule_enabled=$('programScheduleEnabled').checked;data.program_schedule={};for(const row of $('programScheduleRows').children){const time=row.querySelector('input').value;if(!time||data.program_schedule[time])throw Error('Give each scheduled program a different start time.');data.program_schedule[time]=row.querySelector('select').value}
+    }else if(localPrograms.has(editingProgram)){
+      for(const input of $('customProgramFields').querySelectorAll('[data-option]'))data.app_settings[editingProgram][input.dataset.option]=input.type==='checkbox'?input.checked:input.type==='number'?Number(input.value):input.value;
+    }else{
+      data.server_refresh_seconds=Number($('serverMinutes').value)*60;
+      if(editingProgram==='simple-weather')Object.assign(data.adaptive_refresh,{temperature_delta_c:Number($('temperatureDelta').value),precipitation_percent:Number($('precipitationPercent').value),wind_delta_kmh:Number($('windDelta').value)});
+      else{data.enabled_pages=[];data.page_schedule={};data.advisories=$('advisories').checked;for(const row of $('schedule').children){const check=row.querySelector('input[type=checkbox]'),time=row.querySelector('input[type=time]').value;if(check.checked){if(!time||data.page_schedule[time])throw Error('Give each enabled page a different start time.');data.enabled_pages.push(check.dataset.page);data.page_schedule[time]=check.dataset.page}}}
+    }
+    $('save').disabled=true;busy=true;state=await api('/api/settings',data);render();$('editor').close();$('notice').textContent='Saved. Your Nook receives the changes on its next fetch.';
+  }catch(error){$('error').textContent=error.message}finally{$('save').disabled=false;busy=false}
+};
+function addProgramTime(time='12:00',program='simple-weather'){const row=element('div',undefined,'row');row.style.marginTop='12px';const input=element('input');input.type='time';input.value=time;input.setAttribute('aria-label','Program start time');const select=element('select');select.setAttribute('aria-label','Scheduled program');for(const p of state.programs){const option=element('option',p.name);option.value=p.id;select.append(option)}select.value=program;row.append(input,select,button('Remove',()=>row.remove()));$('programScheduleRows').append(row)}
+$('addProgramTime').onclick=()=>{if($('programScheduleRows').children.length<12)addProgramTime()};
+$('resetDisplay').onclick=async()=>{const button=$('resetDisplay');button.disabled=true;$('resetStatus').textContent='Connecting to the Nook…';try{$('resetStatus').textContent=(await api('/api/display/reset',{})).message}catch(error){$('resetStatus').textContent=error.message}finally{button.disabled=false}};
+function openReminder(record={}){
+  $('reminderId').value=record.id||'';$('reminderName').value=record.title||'';$('reminderMessage').value=record.message||'';$('reminderWhen').value=record.when||'';$('reminderMinutes').value=record.minutes||15;$('reminderIcon').value=record.icon||'calendar';$('reminderError').textContent='';$('reminderTitle').textContent=record.id?'Edit reminder':'Add reminder';$('reminderZone').textContent='Timezone: '+state.timezone+'. Repeated daylight-saving times use the first occurrence.';$('reminderEditor').showModal();
+}
+function renderReminders(){
+  const root=$('reminderList');root.replaceChildren();for(const reminder of [...state.reminders].sort((a,b)=>a.at-b.at)){
+    const row=element('div',undefined,'reminder-item'),now=Date.now()/1000,end=reminder.at+reminder.minutes*60;
+    row.append(element('strong',reminder.title),element('p',`${timeAt(reminder.at)} · ${reminder.minutes} minutes · ${now>=end?'Finished':now>=reminder.at?'Showing now':'Upcoming'}`,'muted'),element('p',reminder.message));
+    row.append(button('Edit',()=>openReminder(reminder)),button('Delete',async()=>{try{state=await api('/api/reminders',{action:'delete',id:reminder.id});renderReminders()}catch(error){$('notice').textContent=error.message}}));root.append(row);
+  }if(!state.reminders.length)root.append(element('p','No reminders yet.','muted'));
+  const next=activity?.next_fetch,early=next&&state.reminders.some(r=>r.at>Date.now()/1000&&r.at<next);
+  $('reminderTiming').textContent=early?`A reminder starts before the Nook’s next expected fetch (${timeAt(next)}). Wake the Nook so it can receive the new timer; otherwise that reminder may be late or missed.`:next?`Next expected connection: ${timeAt(next)}. Add reminders before this connection, or wake the Nook to receive a new timer.`:'The Nook learns about reminders on its next fetch. Wake it after adding a near-term reminder.';
+}
+$('addReminder').onclick=()=>openReminder();$('reminderClose').onclick=$('reminderCancel').onclick=()=>$('reminderEditor').close();
+$('reminderForm').onsubmit=async event=>{event.preventDefault();$('reminderSave').disabled=true;busy=true;try{state=await api('/api/reminders',{action:'upsert',id:$('reminderId').value,title:$('reminderName').value,message:$('reminderMessage').value,when:$('reminderWhen').value,minutes:Number($('reminderMinutes').value),icon:$('reminderIcon').value});renderReminders();$('reminderEditor').close()}catch(error){$('reminderError').textContent=error.message}finally{$('reminderSave').disabled=false;busy=false}};
+async function refreshActivity(){
+  try{
+    activity=await api('/api/display/status');if(!state)return;
+    if(!busy&&!$('editor').open&&!$('reminderEditor').open){state=await api('/api/settings');render()}
+    const data=activity,battery=data.battery;
+    $('batteryLevel').textContent=battery?`${battery.percent}%${battery.charging?' · plugged in':''}`:'Waiting for device report';
+    $('batteryReport').textContent=battery?`Reported ${timeAt(battery.at)}. `+(battery.days_remaining!==null?`Estimated ${battery.days_remaining} days remaining at the observed discharge rate.`:battery.charging?'Unplug to measure discharge.':'Learning discharge rate: needs at least 24 hours and a 3% drop.'):'Waiting for a battery reading.';
+    $('reliability').textContent=data.reliability+(data.renderer_retrying?' · retaining last good image':'');
+    $('failureReport').textContent=`Device failures reported: ${data.device_failures??'unknown'}. Transfer failures today: ${data.days[0].failures.length}.`;
+    $('savingsReport').textContent=data.days.map((day,i)=>`${i?'Yesterday':'Today'}: ${day.count} fetches vs ${day.hourly_baseline} hourly baseline (${Math.abs(day.fetches_avoided)} ${day.fetches_avoided>=0?'fewer':'more'}).`).join(' ');
+    $('displayPreview').hidden=!data.has_preview;
+    $('previewTime').textContent=data.has_preview?`Fetched ${timeAt(data.last_fetch.at)}${data.image.program?' · '+nameFor(data.image.program):''}. Exact image delivered to the Nook.`:'The exact preview will appear after the Nook’s next successful fetch.';
+    const hash=data.last_fetch?.image_hash;if(data.has_preview&&$('displayPreview').dataset.hash!==hash){$('displayPreview').dataset.hash=hash;$('displayPreview').src='/api/display/preview.png?image='+hash}
+    $('lastFetch').textContent=data.last_fetch?timeAt(data.last_fetch.at):'No fetch recorded yet';$('nextFetch').textContent=data.next_fetch?timeAt(data.next_fetch)+(Date.now()/1000>data.next_fetch?' · overdue':''):'After the first fetch';$('todayCount').textContent=data.days[0].count;
+    for(let i=0;i<2;i++){const prefix=i===0?'today':'yesterday',day=data.days[i];$(prefix+'Heading').textContent=`${i?'Yesterday':'Today'} · ${day.count} updates`;const list=$(prefix+'Events');list.replaceChildren();for(const event of day.events){const item=element('li',timeAt(event.at,false)),detail=element('small',`Next in ${Math.round(event.seconds/60)} min · ${event.reason}`);item.append(detail);list.append(item)}for(const failure of day.failures)list.append(element('li',timeAt(failure.at,false)+' · '+failure.reason));if(!list.children.length)list.append(element('li','No recorded fetches.'))}
+    $('trackingSince').textContent=`Tracking since ${timeAt(data.started_at)} · ${state.timezone}. Earlier fetches are not included.`;$('activityStatus').textContent='';renderReminders();
+  }catch(error){$('activityStatus').textContent='Fetch history unavailable. Retrying shortly.'}
+}
+Promise.all([api('/api/settings'),api('/api/media')]).then(([settings,media])=>{state=settings;pictures=media.pictures;render();refreshActivity()}).catch(error=>$('notice').textContent=error.message);
+setInterval(refreshActivity,30000);

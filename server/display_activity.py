@@ -1,6 +1,7 @@
 """Persist successful Nook image deliveries; browser previews are not updates."""
 from datetime import datetime, timedelta
 import json
+import hashlib
 import logging
 import os
 from pathlib import Path
@@ -61,10 +62,23 @@ class DisplayActivity:
             self.failures = self.failures[-10000:]
             self._persist()
 
-    def record(self, seconds, reason, now=None, headers=None):
+    def record(self, seconds, reason, now=None, headers=None, body=None):
         now = time.time() if now is None else now
         with self.lock:
             event = {'at': now, 'seconds': seconds, 'reason': reason}
+            if body:
+                digest = hashlib.sha256(body).hexdigest()
+                target = self.path.parent / ('fetched-' + digest + '.png')
+                temporary = target.with_suffix('.tmp')
+                try:
+                    self.path.parent.mkdir(parents=True, exist_ok=True)
+                    temporary.write_bytes(body)
+                    os.replace(temporary, target)
+                    event['image_hash'] = digest
+                except OSError:
+                    LOG.exception('Could not save delivered-image preview')
+                finally:
+                    temporary.unlink(missing_ok=True)
             headers = headers or {}
             try:
                 event['device_failures'] = max(0, min(2147483647, int(headers.get('X-Nook-Failures'))))
@@ -83,6 +97,20 @@ class DisplayActivity:
             # delivery indefinitely so an offline display still has a last fetch.
             self.events = [e for e in self.events if e['at'] >= now - 3 * 86400][-10000:]
             self._persist()
+            if event.get('image_hash'):
+                for old in self.path.parent.glob('fetched-*.png'):
+                    if old != target:
+                        old.unlink(missing_ok=True)
+
+    def preview(self):
+        with self.lock:
+            digest = self.events[-1].get('image_hash') if self.events else None
+            if not digest:
+                return b''
+            try:
+                return (self.path.parent / ('fetched-' + digest + '.png')).read_bytes()
+            except OSError:
+                return b''
 
     def snapshot(self, timezone, now=None):
         now = time.time() if now is None else now

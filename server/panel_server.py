@@ -142,7 +142,9 @@ class RenderedPages:
         return f"{self.base}/{page}.png", page, reason
 
     def refresh(self, for_fetch=False):
-        selected = program_schedule.selected(self.config)
+        selected = program_schedule.active(self.config)
+        if selected == 'countdown':
+            self.programs.refresh_temperature(self.config)
         if selected in local_programs.LOCAL:
             if selected == 'daylight':
                 self.programs.refresh_daylight(self.config,datetime.now(ZoneInfo(self.config['timezone'])))
@@ -226,16 +228,17 @@ class RenderedPages:
 
     def for_fetch(self):
         now = datetime.now(ZoneInfo(self.config.get('timezone','America/Edmonton')))
-        selected = program_schedule.selected(self.config,now)
+        selected = program_schedule.active(self.config,now)
         if selected in local_programs.LOCAL:
-            return self.programs.render(selected,self.config,now)
-        if self.base:
-            desired = 'simple-weather' if selected == 'simple-weather' else pagechoice.choose(self.config,self.weather,now)[0]
-            if self.page != desired:
-                # A reminder/schedule may finish between background refreshes.
-                # Use the already-rendered local image without a weather API call.
-                self.refresh(for_fetch=True)
-        return self.current()
+            body = self.programs.render(selected,self.config,now)
+        else:
+            if self.base:
+                desired = 'simple-weather' if selected == 'simple-weather' else pagechoice.choose(self.config,self.weather,now)[0]
+                if self.page != desired:
+                    self.refresh(for_fetch=True)
+            body = self.current()
+        reminder = self.programs.pending_reminder(self.config,now)
+        return self.programs.overlay_reminder(body,reminder) if reminder and body else body
 
     def current(self):
         with self.lock:
@@ -358,6 +361,8 @@ def make_handler(renderer):
                 if boundary and boundary-time.time() < seconds:
                     seconds, reason = max(60, math.ceil(boundary-time.time())), 'Scheduled program change'
                 actual = display_preview.metadata(body).get('program')
+                if effective['active_program']=='reminder' and actual!='reminder':
+                    effective['active_program']=program_schedule.active(renderer.config)
                 if actual and actual != effective['active_program']:
                     seconds, reason = min(seconds, 900), 'Waiting for selected image'
                 self.send_response(200)

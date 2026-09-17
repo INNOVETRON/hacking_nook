@@ -39,7 +39,7 @@ public final class ImageFetcher {
             connection = (HttpURLConnection) url.openConnection();
             connection.setConnectTimeout(CONNECT_TIMEOUT_MS);
             connection.setReadTimeout(READ_TIMEOUT_MS);
-            connection.setRequestProperty("User-Agent", "NookPanel/0.3 (BNRV300)");
+            connection.setRequestProperty("User-Agent", "NookPanel/0.4 (BNRV300)");
             connection.setRequestProperty("Connection", "close");
 
             android.content.Intent battery = context.registerReceiver(null,

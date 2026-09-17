@@ -1,5 +1,7 @@
 """Versioned LAN control plane. Program adapters remain server-side."""
 import json
+import io
+from PIL import Image
 import os
 from pathlib import Path
 import re
@@ -7,6 +9,7 @@ import tempfile
 import threading
 import time
 import uuid
+from urllib.request import urlopen
 from datetime import datetime
 from zoneinfo import ZoneInfo
 from http.server import BaseHTTPRequestHandler
@@ -167,13 +170,22 @@ def make_handler(settings):
                     return self.reply(404,{'error':'Picture not found'})
             if path == '/api/program/preview.png':
                 program=query.get('program',[''])[0]
-                if program not in local_programs.LOCAL-{'reminder'}:
-                    return self.reply(400,{'error':'Choose a local program'})
+                if program not in program_schedule.PROGRAMS:
+                    return self.reply(400,{'error':'Choose a program'})
                 try:
                     now=datetime.now(ZoneInfo(settings.renderer.config['timezone']))
                     if program=='daylight':
                         settings.program_renderer.refresh_daylight(settings.renderer.config,now)
-                    body=settings.program_renderer.render(program,settings.renderer.config,now,query.get('image',[None])[0])
+                    if program in local_programs.LOCAL:
+                        if program=='countdown':
+                            settings.program_renderer.refresh_temperature(settings.renderer.config)
+                        body=settings.program_renderer.render(program,settings.renderer.config,now,query.get('image',[None])[0])
+                    else:
+                        base=(settings.renderer.config.get('renderer_url') or settings.renderer.config.get('mirror_base') or '').rstrip('/')
+                        page='simple-weather' if program=='simple-weather' else pagechoice.choose(settings.renderer.config,settings.renderer.weather,now)[0]
+                        if not base:raise ValueError('Renderer unavailable')
+                        with urlopen(base+'/'+page+'.png',timeout=15) as response:body=response.read()
+                        with Image.open(io.BytesIO(body)) as image:image.load()
                     return self.reply(200,body,'image/png')
                 except (OSError,ValueError):
                     return self.reply(400,{'error':'Could not preview this program'})

@@ -141,12 +141,13 @@ public class PanelActivity extends Activity {
         PowerCycle.wifi(this, true);
         long last = Config.prefs(this).getLong("last_attempt_at", 0L);
         boolean changed = !Config.url(this).equals(Config.prefs(this).getString("last_attempt_url", ""));
-        boolean due = System.currentTimeMillis() >= last + Config.intervalSeconds(this) * 1000L;
+        long next = Config.prefs(this).getLong("next_attempt_at", last + Config.intervalSeconds(this) * 1000L);
+        boolean due = System.currentTimeMillis() >= next;
         if (requestedRefresh || last == 0 || changed || due) {
             requestedRefresh = false;
             refresh();
         } else {
-            PowerCycle.schedule(this, last + Config.intervalSeconds(this) * 1000L);
+            PowerCycle.schedule(this, next);
             armIdle();
         }
     }
@@ -178,7 +179,8 @@ public class PanelActivity extends Activity {
     private void armIdle() {
         handler.removeCallbacks(idleSleep);
         if (!resumed || fetching || sleeping || Config.url(this).length() == 0) return;
-        handler.postDelayed(idleSleep, automatic ? 5000L : MANUAL_IDLE_MS);
+        handler.postDelayed(idleSleep, automatic || Config.prefs(this).getInt("consecutive_failures", 0) > 0
+                ? 5000L : MANUAL_IDLE_MS);
     }
 
     private void refresh() {
@@ -232,10 +234,15 @@ public class PanelActivity extends Activity {
             Config.prefs(this).edit().putInt("failed_fetches",
                     Config.prefs(this).getInt("failed_fetches", 0) + 1).commit();
         }
+        int failures = bitmap == null ? Math.min(4, Config.prefs(this).getInt("consecutive_failures", 0) + 1) : 0;
+        int delay = RetryPolicy.delaySeconds(failures, Config.intervalSeconds(this));
         long now = System.currentTimeMillis();
+        Config.prefs(this).edit().putInt("consecutive_failures", failures)
+                .putLong("next_attempt_at", now + delay * 1000L).commit();
         Config.prefs(this).edit().putLong("last_attempt_at", now)
                 .putString("last_attempt_url", fetchUrl).commit();
-        PowerCycle.schedule(this, now + Config.intervalSeconds(this) * 1000L);
+        PowerCycle.schedule(this, now + delay * 1000L);
+        Log.i("NookPanel", "next fetch in " + delay + " seconds; consecutive failures=" + failures);
         if (!fetchUrl.equals(Config.url(this))) {
             if (bitmap != null) bitmap.recycle();
             PowerCycle.release();

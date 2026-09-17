@@ -97,6 +97,9 @@ class ProgramRenderer:
         self.rotation=self._read('rotation.json',{})
         self.sun=self._read('daylight.json',{})
         self.sun_attempt=0
+        self.reminders=self._read('reminder-deliveries.json',{})
+        self.temperature=self._read('temperature.json',{})
+        self.temperature_attempt=0
 
     def _read(self,name,default):
         try:return json.loads((self.cache/name).read_text())
@@ -110,6 +113,10 @@ class ProgramRenderer:
     def delivered(self,body,now):
         meta=display_preview.metadata(body)
         with self.lock:
+            if meta.get('reminder_id') and meta.get('reminder_at') is not None:
+                self.reminders[meta['reminder_id']]=meta['reminder_at']
+                try:self._write('reminder-deliveries.json',self.reminders)
+                except OSError:LOG.exception('Could not persist reminder delivery')
             previous=self.rotation
             program=meta.get('program','weather-cal')
             state={'program':program,'id':previous.get('id'),'at':previous.get('at',now)}
@@ -121,6 +128,44 @@ class ProgramRenderer:
             self.rotation=state
             try:self._write('rotation.json',state)
             except OSError:LOG.exception('Could not save photo rotation')
+
+    def pending_reminder(self,config,now):
+        reminder=program_options.active_reminder(config,now)
+        with self.lock:
+            return reminder if reminder and self.reminders.get(reminder['id'])!=reminder['at'] else None
+
+    def overlay_reminder(self,body,reminder):
+        image=Image.open(io.BytesIO(body)).convert('L')
+        # Keep the current program recognizable behind a crisp paper popup.
+        image=Image.blend(image,Image.new('L',image.size,255),.55)
+        draw=ImageDraw.Draw(image)
+        draw.rounded_rectangle((26,174,582,666),radius=18,fill=80)
+        draw.rounded_rectangle((18,164,574,654),radius=18,fill=255,outline=0,width=4)
+        draw.rounded_rectangle((20,166,572,244),radius=16,fill=0)
+        draw.rectangle((20,205,572,244),fill=0)
+        label(draw,188,'REMINDER',27,255,bold=True)
+        emblem(draw,reminder['icon'],(300,296),54)
+        bottom=lines(draw,343,reminder['title'],32,max_lines=2)
+        lines(draw,bottom+12,reminder['message'],23,max_lines=4)
+        label(draw,615,'PRESS n TO DISMISS',17,bold=True)
+        meta=display_preview.metadata(body)
+        meta.update(program='reminder',reminder_id=reminder['id'],reminder_at=reminder['at'],next_update=reminder['at']+reminder['minutes']*60)
+        return png(image,meta)
+
+    def refresh_temperature(self,config):
+        import time
+        if time.time()-self.temperature_attempt<300:return
+        self.temperature_attempt=time.time()
+        base=(config.get('renderer_url') or config.get('mirror_base') or '').rstrip('/')
+        if not base:return
+        try:
+            with urlopen(base+'/simple-weather.png',timeout=10) as response:
+                data=display_preview.metadata(response.read())
+            if data.get('temperature_c') is not None:
+                with self.lock:
+                    self.temperature={'value':data['temperature_c'],'at':data['generated_at']}
+                    self._write('temperature.json',self.temperature)
+        except (OSError,ValueError,KeyError):LOG.warning('Temperature unavailable; retaining last observation')
 
     def refresh_daylight(self,config,now):
         if now.timestamp()-self.sun_attempt < 300:return
@@ -160,28 +205,36 @@ class ProgramRenderer:
             else:
                 emblem(draw,'heart',size=120)
                 label(draw,370,'YOUR LITTLE GALLERY',30,bold=True)
-                label(draw,440,'Add pictures in Program settings',22)
+                label(draw,440,'Add pictures in your gallery',22)
             deadline=state.get('at',stamp)+o['minutes']*60 if same else stamp+o['minutes']*60
             # One-photo galleries still use a future deadline after each interval.
             if deadline<=stamp:deadline=stamp+o['minutes']*60
             meta.update(image_id=ident,next_update=deadline)
         elif program=='countdown':
-            o=opts[program];dark=o['theme']=='dark';bg,fg=(0,255) if dark else (255,0)
-            image.paste(bg,(0,0,600,800));draw=ImageDraw.Draw(image)
-            if o['image']:
-                try:
-                    picture=ImageOps.fit(ImageOps.grayscale(self.library.image(o['image'])),(552,245),method=Image.Resampling.LANCZOS)
-                    image.paste(picture,(24,24))
-                except OSError:emblem(draw,o['icon'],(300,140),100,fg)
-            else:emblem(draw,o['icon'],(300,140),100,fg)
-            label(draw,300,o['title'],34,fg,bold=True)
+            o=opts[program]
+            draw.rectangle((0,0,600,270),fill=0)
+            label(draw,22,o['title'],29,255,bold=True)
             if o['date']:
                 target=datetime.strptime(o['date'],'%Y-%m-%d').date();days=(target-now.date()).days
-                label(draw,374,abs(days),150,fg,bold=True)
-                label(draw,548,'DAYS TO GO' if days>0 else 'DAYS SINCE' if days<0 else o['complete'],27,fg,bold=True)
-                label(draw,607,target.strftime('%A · %B %-d, %Y'),22,fg)
-            else:label(draw,420,'Choose your date',40,fg)
-            lines(draw,672,o['subtitle'],22,fg,max_lines=3)
+                label(draw,67,abs(days),118,255,bold=True)
+                label(draw,198,'DAYS TO GO' if days>0 else 'DAYS SINCE' if days<0 else o['complete'],25,255,bold=True)
+                label(draw,239,target.strftime('%B %-d, %Y'),18,255)
+            else:label(draw,113,'Choose your date',38,255)
+            if o['image']:
+                try:
+                    picture=ImageOps.fit(ImageOps.grayscale(self.library.image(o['image'])),(600,370),method=Image.Resampling.LANCZOS)
+                    image.paste(picture,(0,270))
+                except OSError:emblem(draw,o['icon'],(300,450),140)
+            else:emblem(draw,o['icon'],(300,450),140)
+            label(draw,654,o['subtitle'],22)
+            draw.line((30,694,570,694),fill=0,width=2)
+            with self.lock:temperature=dict(self.temperature)
+            value=temperature.get('value');at=temperature.get('at',0)
+            if value is not None and 0<=stamp-at<10800:
+                imperial=config.get('units')=='imperial'
+                label(draw,711,str(round(value*9/5+32 if imperial else value))+'°'+('F' if imperial else 'C'),43,bold=True)
+                label(draw,769,'WEATHER · UPDATED '+datetime.fromtimestamp(at,now.tzinfo).strftime('%-I:%M %p'),13)
+            else:label(draw,733,'Weather unavailable',23)
             midnight=(now+timedelta(days=1)).replace(hour=0,minute=0,second=0,microsecond=0).timestamp()
             meta['next_update']=min(stamp+o['refresh_minutes']*60,midnight)
         elif program=='reminder':

@@ -400,3 +400,35 @@ spring-forward times are skipped and repeated autumn times run once (first fold)
 The dashboard shows the current/next occurrence and near-term wake warning. Editing
 or deleting a reminder changes the whole series. Recurring conflicts are checked
 against existing reminder patterns, including their DST transitions.
+
+### Mobile dashboard and popup reminders
+
+The dashboard supports narrow phone screens with 44-pixel touch targets, direct
+program cards, section shortcuts, and collapsed connection/timing/history details.
+Every program menu has an image preview with loading and failure states. Previews
+use saved settings and never count as device fetches or advance photo rotation.
+
+Photo uploads accept HEIC/HEIF from iPhones, JPEG, PNG and WebP (12 MB upload,
+48 megapixels decoded). Install `libheif-examples` and `util-linux` through apt on
+the server for `heif-convert` and `prlimit`. HEIC conversion is serialized and
+bounded to 45 seconds, 35 CPU seconds, 512 MB virtual memory, and 160 MB output.
+Uploads are normalized to a maximum 1600-pixel image; rotation and transparency
+are handled server-side. No converter is needed on the Nook.
+
+Reminders are rendered as a popup over the currently scheduled program. A
+successful Nook image transfer records the occurrence in
+`.cache/reminder-deliveries.json`; subsequent fetches get the normal screen.
+Pressing n triggers that fetch early. Otherwise the supplied timer expires at the
+reminder's configured end (or an earlier scheduled program boundary). Preview
+requests and interrupted transfers do not consume reminders. Repeating reminders
+are tracked per occurrence, and delivery state survives server restart.
+
+Countdown uses a black counter header, a middle photo/icon, and a temperature
+footer. Temperature comes from the existing Simple Weather observation metadata,
+shows its update time, and becomes unavailable after three hours rather than
+presenting old data as current.
+
+NookPanel 0.4.0 sleeps between failures and retries after 60 seconds twice, then
+30 minutes, then hourly. A successful fetch resets this sequence and restores the
+server-provided interval. The failure sequence and next attempt survive app
+restarts. Manual n-button refresh remains immediate.

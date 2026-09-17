@@ -5,10 +5,34 @@ import os
 from pathlib import Path
 import re
 import threading
+import subprocess
+import shutil
+import tempfile
 import uuid
 from PIL import Image, ImageOps
 
 MAX_UPLOAD = 12 * 1024 * 1024
+HEIF_LOCK = threading.Lock()
+
+
+def decode_heif(body):
+    """Decode iPhone HEIC off-device; bound CPU, memory, time and output size."""
+    decoder=shutil.which('heif-convert');limiter=shutil.which('prlimit')
+    if not decoder or not limiter:
+        raise ValueError('HEIC support is unavailable. Please upload JPEG for now.')
+    with HEIF_LOCK, tempfile.TemporaryDirectory(prefix='nook-heic-') as folder:
+        source=Path(folder)/'input.heic';target=Path(folder)/'output.png'
+        source.write_bytes(body)
+        try:
+            subprocess.run([limiter,'--as=536870912','--cpu=35','--fsize=167772160','--',decoder,str(source),str(target)],
+                           check=True,timeout=45,stdout=subprocess.DEVNULL,stderr=subprocess.DEVNULL)
+            # Some HEIF containers contain multiple primary pictures.
+            if not target.exists():
+                target=next(iter(sorted(Path(folder).glob('output-*.png'))),target)
+            return target.read_bytes()
+        except (OSError,subprocess.SubprocessError) as exc:
+            raise ValueError('Could not convert this HEIC photo. Try a smaller photo or export it as JPEG.') from exc
+
 
 
 class MediaLibrary:
@@ -36,10 +60,12 @@ class MediaLibrary:
     def add(self, body, name):
         if not body or len(body) > MAX_UPLOAD:
             raise ValueError('Choose an image smaller than 12 MB.')
+        if body[4:8]==b'ftyp' and any(brand in body[8:64] for brand in (b'heic',b'heix',b'hevc',b'hevx',b'mif1',b'msf1')):
+            body=decode_heif(body)
         try:
             with Image.open(io.BytesIO(body)) as source:
-                if source.format not in ('JPEG', 'PNG', 'WEBP') or source.width * source.height > 24000000:
-                    raise ValueError('Use JPEG, PNG or WebP, up to 24 megapixels.')
+                if source.format not in ('JPEG', 'PNG', 'WEBP') or source.width * source.height > 48000000:
+                    raise ValueError('Use HEIC, JPEG, PNG or WebP, up to 48 megapixels.')
                 source.load()
                 picture = ImageOps.exif_transpose(source).convert('RGBA')
                 picture.thumbnail((1600, 1600), Image.Resampling.LANCZOS)

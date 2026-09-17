@@ -1165,3 +1165,25 @@ not a physical overnight battery measurement. No APK update was required.
   /home/afshin/nook-backups/schedule-repeat-20260916. No Nook APK changes.
 - Validation: 81 tests pass, including DST, weekday/weekly recurrence, cross-midnight
   activity, conflicts, and legacy one-shot reminders; dashboard JavaScript checks pass.
+
+### 2026-09-17 — Mobile dashboard, HEIC gallery, popup reminders and retry APK
+
+- Reworked the dashboard for a 375-pixel phone viewport: direct program cards,
+  SVG action icons with accessible names, comfortable touch targets, navigation
+  shortcuts, and collapsed technical metrics/history. Program previews show
+  loading/error states; gallery controls support native HEIC uploads.
+- Deployed server/dashboard changes to nultra (192.168.4.43), preserving user
+  settings. Backup: `/home/afshin/nook-backups/mobile-dashboard-20260917`.
+- Installed distribution `libheif-examples`; isolated synthetic HEIC encode →
+  upload → normalized PNG test passed on ARM. Decoder uses bounded subprocesses.
+- Reminder popups overlay the scheduled image; successful Nook transfers consume
+  that occurrence, so pressing n fetches the clear display. Delivery ledger
+  persists through restart; previews do not consume reminders.
+- Countdown now has a black counter banner, photo/icon middle and timestamped
+  observation temperature footer. Inspected rendered countdown and popup images.
+- Validation: 83 server tests passed, Java retry policy test passed, JS syntax
+  check passed. APK 0.4.0 builds successfully in the pinned API-7 environment.
+  Retries sleep 1m, 1m, 30m, then 1h; success restores normal timing.
+- Browser verification at 375 × 812 found no horizontal overflow. All six
+  programs returned valid 600 × 800 previews. Nook installation pending wake:
+  known address 192.168.4.78:5555 was unreachable during this work.

@@ -1063,3 +1063,14 @@ and whitespace checks passed. Backed up the prior adapter under
 the idle renderer. The existing program selection and timing settings are unchanged.
 The updated page rendered at 17:37:55 MDT. Visually inspected the deployed PNG;
 panel.png and simple-weather.png SHA-256 hashes match. Updated the reference image.
+
+## 2026-09-16 — Inverted date banner
+
+Changed Simple Weather's date header to a full-width black banner with white
+text, retaining the large day on the left and stacked weekday/month on the right.
+Inspected the 600x800 Chrome preview; compilation and whitespace checks passed.
+Backed up the previous layout under ~/nook-backups/inverted-header-20260916 on
+nultra, deployed the adapter and restarted the idle renderer.
+Regeneration completed at 18:59:25 MDT. Visually verified the deployed black
+header and white date text. panel.png matches simple-weather.png byte-for-byte;
+updated the checked-in reference image.

@@ -46,9 +46,11 @@ def artwork(current, hourly, now=None):
         art, label = symbol(path)
         pieces.append(f'<g transform="translate({x},{y}) scale({size/100})">{art}</g>')
         return label
+    pieces.append('<rect width="600" height="128" fill="black"/><g fill="white">')
     text(145,112,now.day,112)
     text(394, 60,now.strftime('%A').upper(),30)
     text(394,102,now.strftime('%B').upper(),26)
+    pieces.append('</g>')
     label=icon(188,136,224,current.get('icon'))
     temp=current['temperature']
     value=f"{temp['value']}{temp['unit']}"

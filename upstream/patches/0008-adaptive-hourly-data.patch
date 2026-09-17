@@ -1,0 +1,31 @@
+Expose 24 hours to Simple Weather without changing the other pages.
+
+--- a/server/weather/service.py
++++ b/server/weather/service.py
+@@ -52,9 +52,13 @@
+             "current_conditions": self.get_current_conditions,
+             "daily_summary": self.get_daily_summary,
+             "hourly_forecasts": self.get_hourly_forecast,
++            "simple_hourly_forecasts": self.get_simple_hourly_forecast,
+             "tomorrow_hourly": self.get_tomorrow_hourly,
+             "daily_forecasts": self.get_5day_forecast,
+         }
++
++    def get_simple_hourly_forecast(self):
++        return self.get_hourly_forecast()
+ 
+     def invalidate(self):
+         self.invalidate_forecast_cache()
+--- a/server/weather/openmeteo/openmeteo.py
++++ b/server/weather/openmeteo/openmeteo.py
+@@ -204,6 +204,10 @@
+             },
+         }
+ 
++    def get_simple_hourly_forecast(self):
++        from simple_weather_data import forecasts
++        return forecasts(self)
++
+     def get_hourly_forecast(self) -> list:
+         cached = self.cache.get("hourly_forecast")
+         if cached is not None and all("uv_index" in f for f in cached):

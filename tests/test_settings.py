@@ -46,3 +46,14 @@ class ControlPlane(unittest.TestCase):
     def test_default_schedule_enabled_pages_match(self):
         s=self.store.snapshot()
         self.assertEqual(set(s['enabled_pages']),set(s['page_schedule'].values()))
+
+    def test_adaptive_settings_persist_and_legacy_save_preserves_them(self):
+        self.store.save(dict(self.data, refresh_mode='adaptive',
+                             adaptive_refresh={'min_seconds':900,'max_seconds':7200}))
+        self.store.save(self.data)
+        self.assertEqual(self.store.snapshot()['refresh_mode'],'adaptive')
+        self.assertEqual(self.store.snapshot()['adaptive_refresh']['max_seconds'],7200)
+        before=self.path.read_bytes()
+        with self.assertRaises(ValueError):
+            self.store.save(dict(self.data,adaptive_refresh={'min_seconds':0}))
+        self.assertEqual(self.path.read_bytes(),before)

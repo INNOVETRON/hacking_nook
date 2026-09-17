@@ -8,6 +8,7 @@ import threading
 from http.server import BaseHTTPRequestHandler
 from urllib.parse import urlsplit
 import pagechoice
+import adaptive_refresh
 from display_control import DisplayControl, ResetError
 
 PROGRAMS = [
@@ -27,9 +28,12 @@ class Settings:
 
     def snapshot(self):
         c = self.renderer.config
-        return {"version": 1, "programs": PROGRAMS, "active_program": c.get("active_program", "weather-cal"),
+        seconds, reason = adaptive_refresh.from_png(getattr(self.renderer, "current", lambda: b"")(), c)
+        return {"refresh_preview": {"seconds": seconds, "reason": reason}, "version": 1, "programs": PROGRAMS, "active_program": c.get("active_program", "weather-cal"),
                 "server_refresh_seconds": c.get("server_refresh_seconds", 1800),
                 "device_refresh_seconds": c.get("device_refresh_seconds", 3600),
+                "refresh_mode": c.get("refresh_mode", "fixed"),
+                "adaptive_refresh": adaptive_refresh.options(c),
                 "enabled_pages": c.get("enabled_pages", list(dict.fromkeys((c.get("page_schedule") or pagechoice.DEFAULT_SCHEDULE).values()))),
                 "page_schedule": c.get("page_schedule", pagechoice.DEFAULT_SCHEDULE),
                 "advisories": c.get("advisories", True), "timezone": c["timezone"],
@@ -37,7 +41,7 @@ class Settings:
 
     def save(self, data):
         keys = {"active_program", "device_refresh_seconds", "enabled_pages", "page_schedule", "advisories"}
-        if not isinstance(data, dict) or not keys <= set(data) or set(data) - keys - {"server_refresh_seconds"}:
+        if not isinstance(data, dict) or not keys <= set(data) or set(data) - keys - {"server_refresh_seconds", "refresh_mode", "adaptive_refresh"}:
             raise ValueError("Send all settings fields, without unknown fields.")
         if data["active_program"] not in {p["id"] for p in PROGRAMS}:
             raise ValueError("Unknown program.")
@@ -47,6 +51,7 @@ class Settings:
         server_interval = data.get("server_refresh_seconds", self.renderer.config.get("server_refresh_seconds", 1800))
         if type(server_interval) is not int or not 900 <= server_interval <= 86400:
             raise ValueError("Server generation must be between 15 minutes and 24 hours.")
+        adaptive_refresh.validate({**self.renderer.config, **data})
         enabled = data["enabled_pages"]
         if not isinstance(enabled, list) or not enabled or any(p not in next(p["pages"] for p in PROGRAMS if p["id"] == "weather-cal") for p in enabled) or len(set(enabled)) != len(enabled):
             raise ValueError("Enable at least one valid render, without duplicates.")

@@ -81,6 +81,8 @@ install -m 644 "$REPO/upstream/smart_chart.py" "$APP/smart_chart.py"
 install -m 644 "$REPO/upstream/eccc_current.py" "$APP/eccc_current.py"
 install -m 644 "$REPO/upstream/eccc_weather.py" "$APP/eccc_weather.py"
 install -m 644 "$REPO/upstream/simple_weather.py" "$APP/simple_weather.py"
+install -m 644 "$REPO/upstream/simple_weather_data.py" "$APP/simple_weather_data.py"
+install -m 644 "$REPO/server/adaptive_refresh.py" "$APP/adaptive_refresh.py"
 
 # server.py hardcodes config.yaml beside itself (`cwd` on line 30 is
 # os.path.dirname(os.path.realpath(__file__)), not the process working

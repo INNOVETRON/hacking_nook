@@ -1074,3 +1074,31 @@ nultra, deployed the adapter and restarted the idle renderer.
 Regeneration completed at 18:59:25 MDT. Visually verified the deployed black
 header and white date text. panel.png matches simple-weather.png byte-for-byte;
 updated the checked-in reference image.
+
+## 2026-09-16 — Adaptive Simple Weather refresh
+
+Implemented adaptive wake timing through the existing X-Nook-Refresh-Seconds
+header. Displayer settings owns fixed/adaptive mode, minimum/maximum intervals
+and quiet hours; Simple Weather owns temperature/precipitation/wind thresholds.
+Defaults: 15–120 minutes, 00:00–06:00, 3 C, 50% precipitation and 20 km/h wind delta.
+Fixed 60-minute setting and original program schedule remain available.
+Metadata with the displayed reading and 24 forecast hours is embedded atomically
+in each Simple Weather PNG. The proxy derives the next wake from those exact
+bytes, including restored caches. Stale/missing data takes a short retry rather
+than a long sleep. Boundaries use local time with epoch interval arithmetic.
+Overnight artwork shows four morning hours and NEXT UPDATE; a matching complete
+morning plan is required for an overnight sleep. Server generation remains 30 min.
+Validation: 57 unit tests passed; real upstream integration check verified morning
+content, metadata and six-hour wake interval. Inspected the 600x800 overnight
+fixture. JavaScript, shell syntax and Python compilation checks passed.
+Deployment baseline hashes matched. Backups under ~/nook-backups/adaptive-20260916
+on nultra. Deployed the control files, shared policy, page, extended forecast helper,
+patch 0008 and deployment scripts. Restarted nookpanel/weather-cal, both active.
+Enabled Adaptive via the dashboard and verified the default limits/quiet hours;
+Simple Weather settings displayed and saved all three weather thresholds.
+Live verification: all five pages finished at 21:20:54 MDT. The served PNG had
+24 forecast hours and the matching displayed temperature. HTTP 200 response at
+21:21:24 carried X-Nook-Refresh-Seconds: 1800; the dashboard reported Temperature
+change / 30 minutes. The checked-in renderer integration also passed failed-render
+retention. Overnight behavior was verified with a controlled midnight fixture,
+not a physical overnight battery measurement. No APK update was required.

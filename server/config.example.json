@@ -30,5 +30,16 @@
     "today",
     "daily",
     "tomorrow"
-  ]
+  ],
+  "refresh_mode": "fixed",
+  "adaptive_refresh": {
+    "min_seconds": 900,
+    "max_seconds": 7200,
+    "quiet_enabled": true,
+    "quiet_start": "00:00",
+    "quiet_end": "06:00",
+    "temperature_delta_c": 3,
+    "precipitation_percent": 50,
+    "wind_delta_kmh": 20
+  }
 }

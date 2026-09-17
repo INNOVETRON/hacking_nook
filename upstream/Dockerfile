@@ -21,6 +21,8 @@ COPY upstream/smart_chart.py /app/smart_chart.py
 COPY upstream/eccc_current.py /app/eccc_current.py
 COPY upstream/eccc_weather.py /app/eccc_weather.py
 COPY upstream/simple_weather.py /app/simple_weather.py
+COPY upstream/simple_weather_data.py /app/simple_weather_data.py
+COPY server/adaptive_refresh.py /app/adaptive_refresh.py
 COPY upstream/patches/ /tmp/nook-patches/
 # Apply the same overlays as the native Pi install (strip the server/ prefix).
 RUN for patch in /tmp/nook-patches/*.patch; do git apply -p2 "$patch" || exit 1; done \

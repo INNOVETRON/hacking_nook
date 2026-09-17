@@ -1,5 +1,11 @@
 """Concept B: sharp portrait weather artwork rendered by the existing pipeline."""
-from datetime import datetime
+from datetime import datetime, timedelta
+import json
+import os
+from pathlib import Path
+from urllib.request import urlopen
+from zoneinfo import ZoneInfo
+import adaptive_refresh
 from html import escape
 import math
 
@@ -37,7 +43,7 @@ def symbol(icon):
     return '<g fill="white" stroke="black" stroke-width="6" stroke-linecap="round" stroke-linejoin="round">'+art+'</g>', label
 
 
-def artwork(current, hourly, now=None):
+def artwork(current, hourly, now=None, overnight=None):
     now = now or datetime.now()
     pieces = []
     def text(x,y,value,size,anchor='middle',weight=700):
@@ -55,7 +61,7 @@ def artwork(current, hourly, now=None):
     temp=current['temperature']
     value=f"{temp['value']}{temp['unit']}"
     text(300,477,value, min(132, 520/max(1,len(value))/.64))
-    text(300,521,label,30 if len(label)<14 else 25)
+    text(300,521,'MORNING FORECAST' if overnight else label,25 if overnight else (30 if len(label)<14 else 25))
     rows=list(hourly[:4])
     for i in range(4):
         x=84+i*144
@@ -67,7 +73,7 @@ def artwork(current, hourly, now=None):
         row=rows[i]
         text(x,578,row['dt'].strftime('%I %p').lstrip('0'),24)
         icon(x-42,592,84,row.get('icon'))
-        text(x,709,str(row['temperature']['value'])+'°',47)
+        text(x,709,('—' if row['temperature'].get('value') is None else str(row['temperature']['value'])+'°'),47)
         pop=row.get('rain_probability')
         text(x,735,'—' if pop is None else f'{round(pop)}% rain',18)
         wind=row.get('wind') or {}
@@ -76,7 +82,7 @@ def artwork(current, hourly, now=None):
         speed=wind.get('value')
         text(x,759,'—' if speed is None else f'{direction} {round(speed)}',18)
     # The current adapter supplies the observation source and local timestamp.
-    source=current.get('weather_text') or 'EDMONTON'
+    source=('NEXT UPDATE '+overnight.strftime('%-I:%M %p')) if overnight else (current.get('weather_text') or 'EDMONTON')
     text(18,790,source,12,'start')
     unit=(rows[0].get('wind') or {}).get('unit','kmh') if rows else 'kmh'
     text(582,790,'WIND '+('km/h' if unit=='kmh' else unit),12,'end')
@@ -88,11 +94,69 @@ from views.page import Page
 
 
 class SimpleWeatherPage(Page):
-    requires = ('current_conditions','hourly_forecasts')
+    requires = ('current_conditions','simple_hourly_forecasts')
 
     def __init__(self,*geometry):
         super().__init__('simple-weather',*geometry)
 
     def template(self,**kwargs):
-        svg=artwork(kwargs['current_conditions'],kwargs['hourly_forecasts'])
+        try:
+            with urlopen(os.environ.get('NOOK_SETTINGS_URL','http://127.0.0.1:8001/api/settings'),timeout=3) as response:
+                settings=json.load(response)
+            adaptive_refresh.validate(settings)
+            self._settings=settings
+        except (OSError, ValueError, TypeError):
+            settings=getattr(self,'_settings',{})
+        zone=ZoneInfo(settings.get('timezone','America/Edmonton'))
+        now=datetime.now(zone)
+        current=kwargs['current_conditions']
+        hours=kwargs['simple_hourly_forecasts']
+        def local(stamp):
+            return stamp.replace(tzinfo=zone) if stamp.tzinfo is None else stamp.astimezone(zone)
+        def celsius(temp):
+            value=temp.get('value')
+            return None if value is None else ((value-32)*5/9 if 'F' in temp.get('unit','') else value)
+        def wind_kmh(wind):
+            value=wind.get('value')
+            return None if value is None else (value*1.609344 if wind.get('unit')=='mph' else value)
+        overnight=None
+        if settings.get('refresh_mode')=='adaptive':
+            # Prepare for a boundary just ahead of this scheduled render.
+            window,_=adaptive_refresh.quiet_window(now+timedelta(minutes=5),settings)
+            overnight=window[1] if window else None
+        morning=[r for r in hours if overnight and local(r['dt']) >= overnight][:4]
+        if overnight and len(morning)<4:
+            overnight=None
+        self._metadata=dict(program='simple-weather',generated_at=now.timestamp(),
+            temperature_c=celsius(current['temperature']),
+            condition=adaptive_refresh.category(current.get('icon')),
+            wind_kmh=wind_kmh(current.get('wind') or {}),
+            quiet_until=overnight.timestamp() if overnight else None,
+            morning_hours=len(morning),hours=[dict(at=local(r['dt']).timestamp(),
+                temperature_c=celsius(r['temperature']),condition=adaptive_refresh.category(r.get('icon')),
+                wind_kmh=wind_kmh(r.get('wind') or {}),rain=r.get('rain_probability')) for r in hours])
+        svg=artwork(current,morning if overnight else hours,now,overnight)
         self.airium=('<!doctype html><html><head><meta charset="utf-8"><style>html,body{margin:0;width:100%;height:100%;background:white;overflow:hidden}svg{display:block;width:100%;height:100%}</style></head><body>'+svg+'</body></html>').encode('utf-8')
+
+    @property
+    def png_path(self):
+        path=super().png_path
+        return path+'.stage' if getattr(self,'_staging',False) else path
+
+    def save(self):
+        # Publish pixels and the matching forecast as one atomic PNG. Never pair
+        # an old cached image with metadata from a newer generation.
+        from PIL import Image, PngImagePlugin
+        target=super().png_path
+        self._staging=True
+        try:
+            super().save()
+            info=PngImagePlugin.PngInfo()
+            info.add_text(adaptive_refresh.PNG_KEY,json.dumps(self._metadata,allow_nan=False))
+            with Image.open(target+'.stage') as image:
+                image.save(target+'.adaptive.tmp',format='PNG',pnginfo=info,optimize=True)
+            os.replace(target+'.adaptive.tmp',target)
+        finally:
+            self._staging=False
+            for suffix in ('.stage','.stage.tmp','.adaptive.tmp'):
+                Path(target+suffix).unlink(missing_ok=True)

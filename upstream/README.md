@@ -316,3 +316,21 @@ independent of the original schedule. It requires current conditions and hourly
 forecasts; its four columns show the first four upcoming hours. Missing hourly
 values appear as dashes. The server control center selects this image through
 `active_program: simple-weather`; `weather-cal` retains its existing schedule.
+
+### Adaptive forecast metadata and overnight artwork
+
+Patch `0008` adds `simple_hourly_forecasts` with 24 hours, leaving the original
+hourly page's count unchanged. `simple_weather_data.py` reads the existing combined
+Open-Meteo response. Simple Weather embeds matching forecast metadata into the
+final PNG before atomic publication. Its staging image is never served at the
+public image path. The shared `server/adaptive_refresh.py` module is installed next
+to the renderer by native and Docker deployment paths.
+
+The page reads adaptive settings from the control API on each generation, retaining
+its last known settings if that read fails. Quiet hours render four morning columns
+and the wake time. The proxy verifies the wake time again on every device fetch.
+
+Integration validation using the weather-cal venv:
+`python tests/check_adaptive_renderer.py --server /path/to/patched/server`
+checks overnight content, PNG metadata, and retention of the previous complete
+image if rendering fails. Unit tests cover the timing policy and settings API.

@@ -269,3 +269,42 @@ Server generation and displayer intervals remain shared. The renderer prepares
 `simple-weather.png` alongside its scheduled pages (one additional Chromium render
 per generation). A failed fetch retains the last good image, and disk caches are
 separate for the two programs. No APK update is required.
+
+### Adaptive displayer refresh
+
+Displayer options offers Fixed or Adaptive for Simple Weather. Fixed remains
+backward-compatible and is always used for other programs. Adaptive defaults:
+15-minute minimum, two-hour daytime maximum, midnight–06:00 quiet hours.
+Simple Weather's Program settings exposes temperature delta (3°C), precipitation
+chance (50%), and wind speed delta (20 km/h). Thresholds use Celsius/km/h even
+when artwork uses imperial units. Condition-category changes also shorten sleep;
+sun/moon changes alone do not.
+
+Each Simple Weather PNG embeds its displayed temperature and the next 24 forecast
+hours in a PNG text chunk. `/panel.png` computes `X-Nook-Refresh-Seconds` from the
+exact bytes it serves, never from an unrelated newer forecast. This metadata is
+published atomically with the pixels and survives proxy disk caching and restart.
+No device changes are needed. The dashboard previews the interval that would be
+sent on the next fetch; it is not a report of the sleeping device's alarm.
+
+Stable daytime weather allows up to two hours (and no later than image creation
+plus the maximum). A 3°C change relative to the displayed reading, precipitation
+starting/stopping, a condition change or significant wind change wakes sooner.
+Imminent changes cap the interval at 30 minutes, with a 15-minute lead for
+conditions/precipitation/wind. Quiet-hour boundaries can be closer than the minimum.
+Missing, malformed or stale metadata uses the minimum interval, bounded by the next
+quiet-hour boundary. Images older than the server generation interval plus 15
+minutes (at most 90 minutes) cannot authorize a long sleep.
+
+Overnight images show the first four forecast hours at/after the configured morning
+wake time and a `NEXT UPDATE` label. Only a fresh overnight image with all four
+morning forecasts and the matching wake time can authorize sleep until morning.
+The renderer anticipates quiet-hour boundaries by five minutes; during transitions
+or outages the Nook may make an additional short retry. Elapsed times use UTC
+while quiet hours follow the configured local timezone, including DST.
+
+Server generation stays independent (30 minutes by default). A 15-minute fetch
+may reuse the preceding image; set server generation to 15 minutes if you want
+freshly generated images at that frequency. Quiet hours intentionally suppress
+weather-triggered wakes. A sleeping Nook cannot learn about an unexpected weather
+change until its next fetch. Manual wakes still fetch normally.

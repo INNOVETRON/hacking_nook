@@ -47,6 +47,7 @@ import layouts
 import pagechoice
 import settings
 from weather import Weather
+import adaptive_refresh
 
 LOG = logging.getLogger("nookpanel")
 
@@ -287,14 +288,14 @@ def make_handler(renderer):
                 body = renderer.current()
                 if not body:
                     self.send_response(503)
-                    self.send_header("X-Nook-Refresh-Seconds", str(renderer.config.get("device_refresh_seconds", 3600)))
+                    self.send_header("X-Nook-Refresh-Seconds", str(adaptive_refresh.from_png(body, renderer.config)[0]))
                     self.send_header("Retry-After", str(max(1, renderer.config.get("retry_seconds", 30))))
                     self.send_header("Content-Length", "0")
                     self.send_header("Cache-Control", "no-store")
                     self.end_headers()
                     return
                 self.send_response(200)
-                self.send_header("X-Nook-Refresh-Seconds", str(renderer.config.get("device_refresh_seconds", 3600)))
+                self.send_header("X-Nook-Refresh-Seconds", str(adaptive_refresh.from_png(body, renderer.config)[0]))
                 self.send_header("Content-Type", "image/png")
                 self.send_header("Content-Length", str(len(body)))
                 self.send_header("Cache-Control", "no-store")
